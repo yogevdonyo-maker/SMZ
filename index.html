@@ -601,7 +601,7 @@ textarea{ width:100%; min-height:130px; direction:ltr; font-family:ui-monospace,
 const $=s=>document.querySelector(s);
 const $$=s=>Array.from(document.querySelectorAll(s));
 const SYNC_KEYS=['smz.watch','smz.trades','smz.tm','smz.pf','smz.draw','smz.chan','smz.anchor','smz.settings','smz.scan','smz.recent'];
-const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v)); if(SYNC_KEYS.includes(k)){ localStorage.setItem('smz.__mtime',String(Date.now())); if(typeof gistSchedule==='function') gistSchedule(); } }catch(e){}}};
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{const str=JSON.stringify(v); const prev=localStorage.getItem(k); localStorage.setItem(k,str); if(SYNC_KEYS.includes(k)&&prev!==str){ localStorage.setItem('smz.__mtime',String(Date.now())); if(typeof gistSchedule==='function') gistSchedule(); } }catch(e){}}};
 
 const state={
   bars:[], ticker:'DEMO', interval:'1day', strength:5, source:'demo', manual:null, picking:false, picks:[],
@@ -2998,6 +2998,26 @@ async function ghCreate(){ const r=await fetch('https://api.github.com/gists',{m
 async function ghFind(){ const r=await fetch('https://api.github.com/gists?per_page=100',{headers:ghHeaders()}); const j=await r.json(); if(!r.ok) throw new Error(j.message||('HTTP '+r.status)); const g=j.find(x=>x.files&&x.files['smz-data.json']); return g?g.id:null; }
 async function ghPull(){ const r=await fetch(`https://api.github.com/gists/${GH.gist}?t=${Date.now()}`,{headers:ghHeaders()}); const j=await r.json(); if(!r.ok) throw new Error(j.message||('HTTP '+r.status)); const f=j.files&&j.files['smz-data.json']; if(!f) return null; let content=f.content; if(f.truncated&&f.raw_url){ content=await (await fetch(f.raw_url)).text(); } return JSON.parse(content); }
 async function ghPush(){ const payload=syncPayload(); const content=JSON.stringify(payload); if(content===GH.lastPushed) return; const r=await fetch(`https://api.github.com/gists/${GH.gist}`,{method:'PATCH',headers:ghHeaders(),body:JSON.stringify({files:{'smz-data.json':{content}}})}); if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.message||('HTTP '+r.status)); } GH.lastPushed=content; GH.lastRemote=payload.mtime; }
+function mergeRemote(rem){
+  const J=(k,src)=>{ try{ return JSON.parse(src[k]); }catch(e){ return null; } };
+  const loc={}; for(const k of SYNC_KEYS){ const v=localStorage.getItem(k); if(v!=null) loc[k]=v; } const rd=rem.data||{};
+  const out={};
+  // trades: union by id, newer log wins
+  const lt=J('smz.trades',loc)||[], rt=J('smz.trades',rd)||[]; const m=new Map(); const last=t=>Math.max(t.closed||0,...(t.log||[]).map(l=>l.ts||0),t.opened||0);
+  for(const t of [...rt,...lt]){ const ex=m.get(t.id); if(!ex||last(t)>=last(ex)) m.set(t.id,t); } out['smz.trades']=JSON.stringify([...m.values()].sort((a,b)=>(b.opened||0)-(a.opened||0)));
+  // watchlists: union lists by id, union symbols
+  const lw=J('smz.watch',loc)||{lists:[]}, rw=J('smz.watch',rd)||{lists:[]}; const lm=new Map(); for(const l of [...(rw.lists||[]),...(lw.lists||[])]){ const ex=lm.get(l.id); if(ex){ for(const sym of l.symbols) if(!ex.symbols.includes(sym)) ex.symbols.push(sym); } else lm.set(l.id,{...l,symbols:[...l.symbols]}); }
+  out['smz.watch']=JSON.stringify({active:lw.active||rw.active||'l1',lists:[...lm.values()]});
+  // drawings / channels / anchors: union per symbol
+  for(const k of ['smz.draw','smz.chan','smz.anchor']){ const a=J(k,rd)||{}, b=J(k,loc)||{}; const o={...a}; for(const [sym,v] of Object.entries(b)){ if(k==='smz.draw'&&Array.isArray(v)&&Array.isArray(o[sym])){ const ids=new Set(o[sym].map(x=>x.id)); o[sym]=[...o[sym],...v.filter(x=>!ids.has(x.id))]; } else o[sym]=v; } out[k]=JSON.stringify(o); }
+  // portfolio: newer capital, union flows by ts
+  const lp=J('smz.pf',loc)||{}, rp=J('smz.pf',rd)||{}; const flows=new Map(); for(const f of [...(rp.flows||[]),...(lp.flows||[])]) flows.set(f.ts,f); out['smz.pf']=JSON.stringify({...rp,...lp,flows:[...flows.values()].sort((a,b)=>a.ts-b.ts)});
+  // settings & misc: newer side wins
+  const localNewer=+(localStorage.getItem('smz.__mtime')||0)>=(rem.mtime||0);
+  for(const k of ['smz.tm','smz.settings','smz.scan','smz.recent']){ const v=localNewer?(loc[k]??rd[k]):(rd[k]??loc[k]); if(v!=null) out[k]=v; }
+  for(const [k,v] of Object.entries(out)) localStorage.setItem(k,v);
+  localStorage.setItem('smz.__mtime',String(Date.now()));
+}
 function applyRemote(rem){ let n=0; for(const [k,v] of Object.entries(rem.data||{})){ if((SYNC_KEYS.includes(k)||k==='smz.apikey')&&typeof v==='string'){ localStorage.setItem(k,v); n++; } } localStorage.setItem('smz.__mtime',String(rem.mtime||Date.now())); GH.lastRemote=rem.mtime; return n; }
 function gistSchedule(){ if(!GH.tok||!GH.gist) return; clearTimeout(GH.timer); GH.timer=setTimeout(()=>{ ghPush().then(()=>ghStatus('נשמר בענן '+new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}),'ok')).catch(e=>ghStatus('שגיאת סנכרון: '+e.message,'down')); },3000); }
 async function ghConnect(){
@@ -3010,17 +3030,17 @@ async function ghConnect(){
     const rem=await ghPull();
     if(!rem||!rem.data||!Object.keys(rem.data).length){ await ghPush(); showMsg('#ghMsg','הענן היה ריק – הנתונים המקומיים הועלו.','ok'); }
     else if(!hasLocal||localM===0){ const n=applyRemote(rem); showMsg('#ghMsg',`נטענו ${n} פריטים מהענן – הדף נטען מחדש…`,'ok'); setTimeout(()=>location.reload(),1000); return; }
-    else if(rem.mtime>localM+1000){ showMsg('#ghMsg',`בענן יש גרסה חדשה יותר (${new Date(rem.mtime).toLocaleString('he-IL')}) מהמקומית (${new Date(localM).toLocaleString('he-IL')}). <button class="btn small primary" id="ghUseRemote">השתמש בענן</button> <button class="btn small ghost" id="ghUseLocal">דרוס עם המקומי</button>`,'warn');
-      $('#ghUseRemote').onclick=()=>{ applyRemote(rem); location.reload(); }; $('#ghUseLocal').onclick=async()=>{ await ghPush(); showMsg('#ghMsg','הנתונים המקומיים הועלו לענן.','ok'); }; }
-    else if(localM>rem.mtime+1000){ await ghPush(); showMsg('#ghMsg','המקומי חדש יותר – הועלה לענן.','ok'); }
-    else showMsg('#ghMsg','הענן והמקומי מסונכרנים.','ok');
+    else { const cnt=d=>{ try{ return (JSON.parse(d['smz.trades']||'[]')||[]).length; }catch(e){ return 0; } };
+      showMsg('#ghMsg',`יש נתונים גם בענן (${new Date(rem.mtime).toLocaleString('he-IL')}, ${cnt(rem.data)} עסקאות) וגם במחשב הזה (${new Date(localM).toLocaleString('he-IL')}, ${cnt(Object.fromEntries(SYNC_KEYS.map(k=>[k,localStorage.getItem(k)])))} עסקאות). <button class="btn small primary" id="ghMerge">מזג (מומלץ)</button> <button class="btn small ghost" id="ghUseRemote">רק הענן</button> <button class="btn small ghost" id="ghUseLocal">רק המקומי</button>`,'warn');
+      $('#ghMerge').onclick=async()=>{ mergeRemote(rem); try{ await ghPush(); }catch(e){} location.reload(); };
+      $('#ghUseRemote').onclick=()=>{ applyRemote(rem); location.reload(); }; $('#ghUseLocal').onclick=async()=>{ localStorage.setItem('smz.__mtime',String(Date.now())); await ghPush(); showMsg('#ghMsg','הנתונים המקומיים הועלו לענן.','ok'); }; }
     ghStatus('מחובר','ok'); startPoll();
   }catch(e){ showMsg('#ghMsg','שגיאה: '+esc(e.message)+(e instanceof TypeError?' – אין גישה לרשת (מתוך Claude זה לא נתמך)':''),'err'); ghStatus('לא מחובר','down'); }
 }
 function startPoll(){ clearInterval(GH.poll); GH.poll=setInterval(async()=>{ if(!GH.tok||!GH.gist||GH.busy||document.visibilityState==='hidden') return; GH.busy=true; try{ const rem=await ghPull(); const localM=+(localStorage.getItem('smz.__mtime')||0); if(rem&&rem.mtime>localM+1000&&Date.now()-localM>15000){ applyRemote(rem); ghStatus('עודכן ממחשב אחר – טוען מחדש…','ok'); setTimeout(()=>location.reload(),800); } }catch(e){} GH.busy=false; },60000); }
 $('#ghTok').value=GH.tok; $('#ghConnect').onclick=ghConnect;
 $('#ghDisconnect').onclick=()=>{ GH.tok=''; GH.gist=''; localStorage.removeItem('smz.ghtok'); localStorage.removeItem('smz.ghgist'); clearInterval(GH.poll); $('#ghTok').value=''; ghStatus(''); showMsg('#ghMsg','נותק. הנתונים בענן נשארו; חיבור מחדש עם אותו טוקן ימצא אותם.','warn'); };
-$('#ghNow').onclick=async()=>{ if(!GH.tok||!GH.gist){ showMsg('#ghMsg','חבר קודם.','warn'); return; } try{ const rem=await ghPull(); const localM=+(localStorage.getItem('smz.__mtime')||0); if(rem&&rem.mtime>localM+1000){ applyRemote(rem); location.reload(); } else { await ghPush(); showMsg('#ghMsg','סונכרן.','ok'); } }catch(e){ showMsg('#ghMsg','שגיאה: '+esc(e.message),'err'); } };
+$('#ghNow').onclick=async()=>{ if(!GH.tok||!GH.gist){ showMsg('#ghMsg','חבר קודם.','warn'); return; } try{ const rem=await ghPull(); if(rem&&rem.data&&Object.keys(rem.data).length){ mergeRemote(rem); await ghPush(); showMsg('#ghMsg','מוזג וסונכרן – הדף נטען מחדש…','ok'); setTimeout(()=>location.reload(),900); } else { await ghPush(); showMsg('#ghMsg','סונכרן.','ok'); } }catch(e){ showMsg('#ghMsg','שגיאה: '+esc(e.message),'err'); } };
 if(GH.tok&&GH.gist){ ghStatus('מחובר','ok'); startPoll(); setTimeout(()=>{ ghPull().then(rem=>{ const localM=+(localStorage.getItem('smz.__mtime')||0); if(rem&&rem.mtime>localM+1000){ applyRemote(rem); ghStatus('עודכן מהענן – טוען מחדש…','ok'); setTimeout(()=>location.reload(),800); } else if(rem&&localM>rem.mtime+1000) ghPush().catch(()=>{}); }).catch(e=>ghStatus('הענן לא זמין: '+e.message,'down')); },1500); }
 
 /* ---------- persistence in the Claude account (published artifact) ---------- */
