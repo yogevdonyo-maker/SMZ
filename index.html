@@ -601,7 +601,7 @@ textarea{ width:100%; min-height:130px; direction:ltr; font-family:ui-monospace,
 const $=s=>document.querySelector(s);
 const $$=s=>Array.from(document.querySelectorAll(s));
 const SYNC_KEYS=['smz.watch','smz.trades','smz.tm','smz.pf','smz.draw','smz.chan','smz.anchor','smz.settings','smz.scan','smz.recent'];
-const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{const str=JSON.stringify(v); const prev=localStorage.getItem(k); localStorage.setItem(k,str); if(SYNC_KEYS.includes(k)&&prev!==str){ localStorage.setItem('smz.__mtime',String(Date.now())); if(typeof gistSchedule==='function') gistSchedule(); } }catch(e){}}};
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{const str=JSON.stringify(v); const prev=localStorage.getItem(k); localStorage.setItem(k,str); if(SYNC_KEYS.includes(k)&&prev!==str){ localStorage.setItem('smz.__mtime',String(Date.now())); if(typeof gistSchedule==='function'&&typeof GH!=='undefined'&&GH.ready) gistSchedule(); } }catch(e){}}};
 
 const state={
   bars:[], ticker:'DEMO', interval:'1day', strength:5, source:'demo', manual:null, picking:false, picks:[],
@@ -3019,13 +3019,27 @@ function mergeRemote(rem){
   localStorage.setItem('smz.__mtime',String(Date.now()));
 }
 function applyRemote(rem){ let n=0; for(const [k,v] of Object.entries(rem.data||{})){ if((SYNC_KEYS.includes(k)||k==='smz.apikey')&&typeof v==='string'){ localStorage.setItem(k,v); n++; } } localStorage.setItem('smz.__mtime',String(rem.mtime||Date.now())); GH.lastRemote=rem.mtime; return n; }
-function gistSchedule(){ if(!GH.tok||!GH.gist) return; clearTimeout(GH.timer); GH.timer=setTimeout(()=>{ ghPush().then(()=>ghStatus('נשמר בענן '+new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}),'ok')).catch(e=>ghStatus('שגיאת סנכרון: '+e.message,'down')); },3000); }
+/* every cloud save is pull → merge → push, so a device can never overwrite another device's data; nothing is pushed before the first pull of the session */
+async function ghSync(){
+  if(!GH.tok||!GH.gist||GH.busy) { if(GH.busy) GH.again=true; return; }
+  GH.busy=true;
+  try{
+    const rem=await ghPull();
+    let remoteChanged=false;
+    if(rem&&rem.data&&Object.keys(rem.data).length&&rem.mtime!==GH.lastRemote){ const before=JSON.stringify(syncPayload().data); mergeRemote(rem); remoteChanged=JSON.stringify(syncPayload().data)!==before; }
+    GH.ready=true; await ghPush();
+    ghStatus('נשמר בענן '+new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'}),'ok');
+    if(remoteChanged){ ghStatus('מוזג ממחשב אחר – טוען מחדש…','ok'); setTimeout(()=>location.reload(),900); }
+  }catch(e){ ghStatus('שגיאת סנכרון: '+e.message,'down'); }
+  GH.busy=false; if(GH.again){ GH.again=false; gistSchedule(); }
+}
+function gistSchedule(){ if(!GH.tok||!GH.gist) return; clearTimeout(GH.timer); GH.timer=setTimeout(ghSync,3000); }
 async function ghConnect(){
   const tok=($('#ghTok').value||'').trim(); if(!tok){ showMsg('#ghMsg','הדבק טוקן.','warn'); return; }
   GH.tok=tok; LS.set('smz.ghtok',tok); showMsg('#ghMsg','מתחבר…','warn');
   try{
     let id=GH.gist||await ghFind(); const localM=+(localStorage.getItem('smz.__mtime')||0); const hasLocal=SYNC_KEYS.some(k=>localStorage.getItem(k));
-    if(!id){ id=await ghCreate(); GH.gist=id; LS.set('smz.ghgist',id); showMsg('#ghMsg','נוצר Gist סודי והנתונים המקומיים הועלו. במחשב השני: הדבק את אותו טוקן ולחץ "חבר".','ok'); ghStatus('מחובר','ok'); startPoll(); return; }
+    if(!id){ id=await ghCreate(); GH.gist=id; LS.set('smz.ghgist',id); GH.ready=true; showMsg('#ghMsg','נוצר Gist סודי והנתונים המקומיים הועלו. במחשב השני: הדבק את אותו טוקן ולחץ "חבר".','ok'); ghStatus('מחובר','ok'); startPoll(); return; }
     GH.gist=id; LS.set('smz.ghgist',id);
     const rem=await ghPull();
     if(!rem||!rem.data||!Object.keys(rem.data).length){ await ghPush(); showMsg('#ghMsg','הענן היה ריק – הנתונים המקומיים הועלו.','ok'); }
@@ -3034,14 +3048,14 @@ async function ghConnect(){
       showMsg('#ghMsg',`יש נתונים גם בענן (${new Date(rem.mtime).toLocaleString('he-IL')}, ${cnt(rem.data)} עסקאות) וגם במחשב הזה (${new Date(localM).toLocaleString('he-IL')}, ${cnt(Object.fromEntries(SYNC_KEYS.map(k=>[k,localStorage.getItem(k)])))} עסקאות). <button class="btn small primary" id="ghMerge">מזג (מומלץ)</button> <button class="btn small ghost" id="ghUseRemote">רק הענן</button> <button class="btn small ghost" id="ghUseLocal">רק המקומי</button>`,'warn');
       $('#ghMerge').onclick=async()=>{ mergeRemote(rem); try{ await ghPush(); }catch(e){} location.reload(); };
       $('#ghUseRemote').onclick=()=>{ applyRemote(rem); location.reload(); }; $('#ghUseLocal').onclick=async()=>{ localStorage.setItem('smz.__mtime',String(Date.now())); await ghPush(); showMsg('#ghMsg','הנתונים המקומיים הועלו לענן.','ok'); }; }
-    ghStatus('מחובר','ok'); startPoll();
+    GH.ready=true; ghStatus('מחובר','ok'); startPoll();
   }catch(e){ showMsg('#ghMsg','שגיאה: '+esc(e.message)+(e instanceof TypeError?' – אין גישה לרשת (מתוך Claude זה לא נתמך)':''),'err'); ghStatus('לא מחובר','down'); }
 }
-function startPoll(){ clearInterval(GH.poll); GH.poll=setInterval(async()=>{ if(!GH.tok||!GH.gist||GH.busy||document.visibilityState==='hidden') return; GH.busy=true; try{ const rem=await ghPull(); const localM=+(localStorage.getItem('smz.__mtime')||0); if(rem&&rem.mtime>localM+1000&&Date.now()-localM>15000){ applyRemote(rem); ghStatus('עודכן ממחשב אחר – טוען מחדש…','ok'); setTimeout(()=>location.reload(),800); } }catch(e){} GH.busy=false; },60000); }
+function startPoll(){ clearInterval(GH.poll); GH.poll=setInterval(()=>{ if(document.visibilityState!=='hidden'&&Date.now()-(+(localStorage.getItem('smz.__mtime')||0))>15000) ghSync(); },60000); }
 $('#ghTok').value=GH.tok; $('#ghConnect').onclick=ghConnect;
 $('#ghDisconnect').onclick=()=>{ GH.tok=''; GH.gist=''; localStorage.removeItem('smz.ghtok'); localStorage.removeItem('smz.ghgist'); clearInterval(GH.poll); $('#ghTok').value=''; ghStatus(''); showMsg('#ghMsg','נותק. הנתונים בענן נשארו; חיבור מחדש עם אותו טוקן ימצא אותם.','warn'); };
-$('#ghNow').onclick=async()=>{ if(!GH.tok||!GH.gist){ showMsg('#ghMsg','חבר קודם.','warn'); return; } try{ const rem=await ghPull(); if(rem&&rem.data&&Object.keys(rem.data).length){ mergeRemote(rem); await ghPush(); showMsg('#ghMsg','מוזג וסונכרן – הדף נטען מחדש…','ok'); setTimeout(()=>location.reload(),900); } else { await ghPush(); showMsg('#ghMsg','סונכרן.','ok'); } }catch(e){ showMsg('#ghMsg','שגיאה: '+esc(e.message),'err'); } };
-if(GH.tok&&GH.gist){ ghStatus('מחובר','ok'); startPoll(); setTimeout(()=>{ ghPull().then(rem=>{ const localM=+(localStorage.getItem('smz.__mtime')||0); if(rem&&rem.mtime>localM+1000){ applyRemote(rem); ghStatus('עודכן מהענן – טוען מחדש…','ok'); setTimeout(()=>location.reload(),800); } else if(rem&&localM>rem.mtime+1000) ghPush().catch(()=>{}); }).catch(e=>ghStatus('הענן לא זמין: '+e.message,'down')); },1500); }
+$('#ghNow').onclick=async()=>{ if(!GH.tok||!GH.gist){ showMsg('#ghMsg','חבר קודם.','warn'); return; } showMsg('#ghMsg','מסנכרן…','warn'); await ghSync(); showMsg('#ghMsg','מוזג וסונכרן.','ok'); };
+if(GH.tok&&GH.gist){ ghStatus('מחובר – בודק ענן…','ok'); startPoll(); setTimeout(ghSync,1200); }
 
 /* ---------- persistence in the Claude account (published artifact) ---------- */
 const cloud={ref:null,ready:false,pending:null,writing:false,t:null};
