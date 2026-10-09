@@ -2342,7 +2342,7 @@ function tradeAction(t,a,val){
     if(t.qty<=1e-9){ t.exit=val.price; t.pnl=t.realized.reduce((x,r)=>x+r.pnl,0); t.R=Math.abs(t.entry-t.stop)?(t.pnl/(t.qty0*Math.abs(t.entry-t.stop))):0; t.status='closed'; t.closed=Date.now(); t.closedLocal=localNowSec(); t.log.push({ts:Date.now(),a:'exit',p:val.price}); }
     else { saveTrades(); renderTrades(); checkOne(t,true).then(()=>{ saveTrades(); renderTrades(); }).catch(()=>{}); return; }
   }
-  else if(a==='qty'){ const old=`$${fmt(t.margin)} ×${t.lev||1} (${fmt(t.qty)} יח')`; t.margin=val.margin; t.lev=val.lev; t.qty=val.qty; t.liq=val.liq; t.log.push({ts:Date.now(),a:'qty',note:`${old} → $${fmt(t.margin)} ×${t.lev} (${fmt(t.qty)} יח')`}); }
+  else if(a==='qty'){ const old=`כניסה ${fmt(t.entry)} · $${fmt(t.margin)} ×${t.lev||1} (${fmt(t.qty)} יח')`; if(val.entry&&isFinite(val.entry)) t.entry=val.entry; t.margin=val.margin; t.lev=val.lev; t.qty=val.qty; t.liq=val.liq; t.log.push({ts:Date.now(),a:'qty',note:`${old} → כניסה ${fmt(t.entry)} · $${fmt(t.margin)} ×${t.lev} (${fmt(t.qty)} יח')`}); }
   else if(a==='toggle'){ t.collapsed=!t.collapsed; }
   else if(a==='exit'){ const long=t.dir==='long'; const move=long?price-t.entry:t.entry-price; const realized=(t.realized||[]).reduce((x,r)=>x+r.pnl,0); const qty0=t.qty0||t.qty; t.exit=price; t.pnl=move*t.qty+realized; t.R=Math.abs(t.entry-t.stop)?t.pnl/(qty0*Math.abs(t.entry-t.stop)):0; t.status='closed'; t.closed=Date.now(); t.closedLocal=localNowSec(); t.log.push({ts:Date.now(),a:'exit',p:price}); }
   else if(a==='stop'){ t.log.push({ts:Date.now(),a:'stop',p:price,note:`סטופ ${fmt(t.stop)} → ${fmt(price)}`}); t.stop=price; t.ack=null; }
@@ -2440,7 +2440,7 @@ function tradeCardHTML(t){
         <button class="btn small" data-a="partial-ask">מימוש חלקי</button>
         <button class="btn small" data-a="exit-ask">יצאתי</button>
         <button class="btn small ghost" data-a="stop-ask">${v&&v.suggestStop!=null?'הזז סטופ ל-'+fmt(v.suggestStop):'עדכן סטופ'}</button>
-        <button class="btn small ghost" data-a="qty-ask">עדכן כמות/סכום</button>
+        <button class="btn small ghost" data-a="qty-ask">עדכן כניסה/כמות</button>
         <button class="btn small ghost" data-a="check1">בדוק</button>
         <button class="btn small ghost" data-a="analyze">${t.analysis?'נתח מחדש':'ניתוח'}</button>
         <button class="btn small ghost" data-a="chart">לגרף</button>
@@ -2448,7 +2448,7 @@ function tradeCardHTML(t){
       <div class="tc-inline" data-inline="partial" style="flex-wrap:wrap"><span class="muted" style="font-size:12px">כמות</span><input type="number" step="any" class="p-qty" value="${+(Math.min(t.qty,(t.qty0||t.qty)*((v&&v.plan&&v.plan.need2?v.plan.s2:(TM.settings.s1||33))/100))).toFixed(6)}" style="width:100px"><span class="muted" style="font-size:12px">מחיר</span><input type="number" step="any" class="p-price" value="${v?v.price:t.entry}" style="width:100px"><button class="btn small primary" data-a="partial">ממש</button></div>
       <div class="tc-inline" data-inline="exit"><span class="muted" style="font-size:12px">מחיר יציאה</span><input type="number" step="any" value="${v?v.price:t.entry}"><button class="btn small primary" data-a="exit">סגור עסקה</button></div>
       <div class="tc-inline" data-inline="stop"><span class="muted" style="font-size:12px">סטופ חדש</span><input type="number" step="any" value="${v&&v.suggestStop!=null?v.suggestStop:t.stop}"><button class="btn small primary" data-a="stop">עדכן</button></div>
-      <div class="tc-inline" data-inline="qty" style="flex-wrap:wrap"><span class="muted" style="font-size:12px">מרג'ין $</span><input type="number" step="any" class="q-usd" value="${+(t.margin).toFixed(2)}" style="width:90px"><span class="muted" style="font-size:12px">מינוף</span><input type="number" step="1" min="1" class="q-lev" value="${t.lev||1}" style="width:56px"><span class="muted" style="font-size:12px">כמות</span><input type="number" step="any" class="q-units" value="${+t.qty.toFixed(6)}" style="width:90px"><span class="muted" style="font-size:12px">חיסול</span><input type="number" step="any" class="q-liq" value="${t.liq!=null?t.liq:''}" placeholder="אוטו" style="width:90px"><button class="btn small primary" data-a="qty">עדכן</button></div>
+      <div class="tc-inline" data-inline="qty" style="flex-wrap:wrap"><span class="muted" style="font-size:12px">כניסה</span><input type="number" step="any" class="q-entry" value="${t.entry}" style="width:90px"><span class="muted" style="font-size:12px">מרג'ין $</span><input type="number" step="any" class="q-usd" value="${+(t.margin).toFixed(2)}" style="width:90px"><span class="muted" style="font-size:12px">מינוף</span><input type="number" step="1" min="1" class="q-lev" value="${t.lev||1}" style="width:56px"><span class="muted" style="font-size:12px">כמות</span><input type="number" step="any" class="q-units" value="${+t.qty.toFixed(6)}" style="width:90px"><span class="muted" style="font-size:12px">חיסול</span><input type="number" step="any" class="q-liq" value="${t.liq!=null?t.liq:''}" placeholder="אוטו" style="width:90px"><button class="btn small primary" data-a="qty">עדכן</button></div>
       ${t.log.length>1?`<div class="tc-log">${t.log.slice(-3).map(l=>`${new Date(l.ts).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})} ${l.a==='stay'?'נשארתי':l.a==='stop'?'סטופ עודכן':l.a==='qty'?'כמות עודכנה':l.a==='partial'?'מימוש חלקי':l.a==='open'?'כניסה':'יציאה'}${l.note?' – '+esc(l.note):''}`).join(' · ')}</div>`:''}
       </div>
     </div>`;
@@ -2489,7 +2489,8 @@ function bindTradeCards(){
   $$('#tradesPane [data-id]').forEach(card=>{
     const t=W.trades.find(x=>x.id===card.dataset.id); if(!t) return;
     const qu=card.querySelector('.q-units'), qd=card.querySelector('.q-usd'), ql=card.querySelector('.q-lev');
-    if(qu&&qd&&ql){ const rc=()=>{ const m=parseFloat(qd.value), l=Math.max(1,parseInt(ql.value)||1); if(isFinite(m)&&t.entry) qu.value=+(m*l/t.entry).toFixed(6); }; qd.oninput=rc; ql.oninput=rc; }
+    const qe=card.querySelector('.q-entry');
+    if(qu&&qd&&ql){ const rc=()=>{ const m=parseFloat(qd.value), l=Math.max(1,parseInt(ql.value)||1); const E=qe&&parseFloat(qe.value)>0?parseFloat(qe.value):t.entry; if(isFinite(m)&&E) qu.value=+(m*l/E).toFixed(6); }; qd.oninput=rc; ql.oninput=rc; if(qe) qe.oninput=rc; }
     card.querySelectorAll('[data-a]').forEach(b=>b.onclick=e=>{
       const a=b.dataset.a; if(a==='toggle'&&e.target.closest('button')) return; e.stopPropagation();
       if(a==='partial'){ const q=parseFloat(card.querySelector('.p-qty').value), pr=parseFloat(card.querySelector('.p-price').value); if(!isFinite(q)||!isFinite(pr)) return; tradeAction(t,'partial',{qty:q,price:pr}); return; }
@@ -2497,7 +2498,7 @@ function bindTradeCards(){
       if(a==='exit-ask'||a==='stop-ask'||a==='qty-ask'||a==='partial-ask'||a==='roe-ask'){ const which=a.split('-')[0]; card.querySelectorAll('.tc-inline').forEach(x=>x.classList.toggle('open',x.dataset.inline===which&&!x.classList.contains('open'))); return; }
       if(a==='chart'){ $('#ticker').value=t.sym; state.interval=t.tf; $$('#tf button').forEach(x=>x.classList.toggle('on',x.dataset.iv===t.tf)); load(); if(mq.matches) setTab('chart'); return; }
       if(a==='exit'||a==='stop'){ const inp=card.querySelector(`.tc-inline[data-inline="${a}"] input`); const val=parseFloat(inp.value); if(!isFinite(val)) return; tradeAction(t,a,val); return; }
-      if(a==='qty'){ const m=parseFloat(card.querySelector('.q-usd').value), l=Math.max(1,parseInt(card.querySelector('.q-lev').value)||1), q=parseFloat(card.querySelector('.q-units').value), lq=parseFloat(card.querySelector('.q-liq').value); if(!isFinite(m)||m<=0) return; tradeAction(t,'qty',{margin:m,lev:l,qty:(isFinite(q)&&q>0)?q:m*l/t.entry,liq:isFinite(lq)?lq:null}); return; }
+      if(a==='qty'){ const en=parseFloat(card.querySelector('.q-entry').value); const m=parseFloat(card.querySelector('.q-usd').value), l=Math.max(1,parseInt(card.querySelector('.q-lev').value)||1), q=parseFloat(card.querySelector('.q-units').value), lq=parseFloat(card.querySelector('.q-liq').value); if(!isFinite(m)||m<=0) return; const E=(isFinite(en)&&en>0)?en:t.entry; tradeAction(t,'qty',{entry:E,margin:m,lev:l,qty:(isFinite(q)&&q>0)?q:m*l/E,liq:isFinite(lq)?lq:null}); return; }
       if(a==='analyze'&&t.analysis&&t.status==='closed'){ TM.openAnal=TM.openAnal===t.id?null:t.id; renderTrades(); return; }
       if(a==='analyze'||a==='reanalyze'){ b.disabled=true; b.textContent='מנתח…'; TM.openAnal=t.id; analyzeTrade(t).then(()=>{ renderTrades(); render(); }).catch(e=>{ tmStatus(e.net?'אין גישה לרשת מתוך Claude – הניתוח עובד בקובץ המקומי':'ניתוח: '+e.message); b.disabled=false; b.textContent='ניתוח'; }); return; }
       if(a==='heat'){ if(state.tradeHeat&&state.tradeHeat.tradeId===t.id){ state.tradeHeat=null; } else { TM.openAnal=t.id; analyzeTrade(t).then(()=>{ renderTrades(); render(); }).catch(e=>tmStatus('ניתוח: '+e.message)); return; } renderTrades(); render(); return; }
