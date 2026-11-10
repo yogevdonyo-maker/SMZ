@@ -203,7 +203,7 @@ details.how li{ margin-bottom:5px; }
 
   <details class="how" id="livebox" hidden>
     <summary>מחירים בזמן אמת</summary>
-    <p>בשעות המסחר בניו יורק כל המחירים בלוח מתעדכנים בערך כל 5–10 דקות (מקור: Yahoo Finance). עם מפתח Twelve Data, המניה הפתוחה ושבע הראשונות ברשימה מתעדכנות ברצף, עסקה אחר עסקה. אם המפתח כבר שמור באפליקציית SMZ בדפדפן הזה, הוא מזוהה לבד.</p>
+    <p>בשעות המסחר בניו יורק כל המחירים בלוח מתעדכנים כל דקה (מקור: Yahoo Finance). עם מפתח Twelve Data, המניה הפתוחה ושבע הראשונות ברשימה מתעדכנות ברצף, עסקה אחר עסקה. אם המפתח כבר שמור באפליקציית SMZ בדפדפן הזה, הוא מזוהה לבד.</p>
     <p>הדירוג נקבע לפי מחירי סגירה ואינו משתנה במהלך היום. התווית "עכשיו" מראה היכן המחיר נמצא ברגע זה ביחס לאזור.</p>
     <form class="keyform" id="keyform">
       <label for="tdkey">מפתח Twelve Data</label>
@@ -415,14 +415,26 @@ function liveStatus(){
   const ws=LIVE.wsOn&&LIVE.subs.length?` · זרם רציף ל-${LIVE.subs.length} מניות`:'';
   el.className='live'+(LIVE.open?' on':''); el.innerHTML=`<i class="ld"></i>${LIVE.open?'מחירים חיים':'השוק נסגר · מחירי היום'} · עודכן ${clock(LIVE.t)}${ws}`;
 }
-let lastPoll=0, lastRescan=0;
+/* quotes.json is republished every minute. It is read through the GitHub API, which serves the newest copy but allows
+   60 anonymous reads an hour per network, so the pace adapts to what is left of that allowance (one open tab: every 65 s).
+   When the allowance is used up the file is read from raw.githubusercontent.com, which can lag up to 5 minutes. */
+let lastPoll=0, lastRescan=0, pollTimer=null;
+const POLL=65;
+function schedulePoll(sec){ clearTimeout(pollTimer); pollTimer=setTimeout(()=>{ if(document.hidden){ schedulePoll(POLL); return; } pollQuotes(); },sec*1000); }
 async function pollQuotes(){
-  if(INLINE||!SCAN) return; lastPoll=Date.now(); let j=null;
-  try{ const r=await fetch(`https://api.github.com/repos/${REPO}/contents/quotes.json?ref=live`,{headers:{Accept:'application/vnd.github.raw+json'},cache:'no-store'}); if(r.ok) j=await r.json(); }catch(e){}
-  if(!j){ try{ const r=await fetch(`https://raw.githubusercontent.com/${REPO}/live/quotes.json?m=${Math.floor(Date.now()/60000)}`,{cache:'no-store'}); if(r.ok) j=await r.json(); }catch(e){} }
+  if(INLINE||!SCAN) return; lastPoll=Date.now(); let j=null, wait=POLL;
+  try{
+    const r=await fetch(`https://api.github.com/repos/${REPO}/contents/quotes.json?ref=live`,{headers:{Accept:'application/vnd.github.raw+json'},cache:'no-store'});
+    const left=+r.headers.get('x-ratelimit-remaining'), reset=+r.headers.get('x-ratelimit-reset'), toReset=reset?Math.max(0,reset-Date.now()/1000):0;
+    if(r.ok){ j=await r.json(); if(reset&&isFinite(left)) wait=Math.max(POLL,Math.ceil(toReset/Math.max(1,left-2))); }
+    else if((r.status===403||r.status===429)&&toReset) wait=Math.min(300,Math.max(POLL,Math.ceil(toReset)));
+  }catch(e){}
+  if(!j){ try{ const r=await fetch(`https://raw.githubusercontent.com/${REPO}/live/quotes.json`,{cache:'no-store'}); if(r.ok) j=await r.json(); }catch(e){} }
+  schedulePoll(wait);
   if(j&&j.q){
-    LIVE.ok=true; LIVE.t=j.t; LIVE.open=!!j.open;
-    for(const s in j.q){ const v=j.q[s], old=LIVE.q[s]; if(old&&old.ws&&old.t>=v[1]){ old.lo=v[2]; old.hi=v[3]; continue; } LIVE.q[s]={p:v[0],t:v[1],lo:v[2],hi:v[3]}; }
+    LIVE.ok=true; if(j.t>=LIVE.t){ LIVE.t=j.t; LIVE.open=!!j.open; }
+    // never let an older copy (the lagging fallback) overwrite a newer price
+    for(const s in j.q){ const v=j.q[s], old=LIVE.q[s]; if(old&&old.t>=v[1]){ if(old.ws&&j.t>=LIVE.t){ old.lo=v[2]; old.hi=v[3]; } continue; } LIVE.q[s]={p:v[0],t:v[1],lo:v[2],hi:v[3]}; }
     // a newer daily scan was published: load it
     if(j.scanAsOf&&j.scanAsOf>SCAN.asOf&&Date.now()-lastRescan>5*60000){ lastRescan=Date.now(); try{ const r=await fetch('data/scan.json',{cache:'no-store'}); if(r.ok){ const d=await r.json(); if(d.asOf>SCAN.asOf){ SCAN=d; header(); render(); } } }catch(e){} }
     refreshLive(null);
@@ -457,8 +469,8 @@ function liveStart(){
   liveStatus(); if(INLINE) return;
   $('#livebox').hidden=false; $('#keymsg').textContent=tdKey()?'מפתח שמור בדפדפן הזה.':'';
   $('#keyform').addEventListener('submit',e=>{ e.preventDefault(); const v=$('#tdkey').value.trim(); try{ if(v) localStorage.setItem('smz.apikey',JSON.stringify(v)); else localStorage.removeItem('smz.apikey'); $('#keymsg').textContent=v?'נשמר. הזרם יתחבר כשהשוק פתוח.':'המפתח הוסר.'; }catch(err){ $('#keymsg').textContent='הדפדפן חסם שמירה.'; } $('#tdkey').value=''; wsClose(); wsSync(); liveStatus(); });
-  pollQuotes(); setInterval(()=>{ if(!document.hidden) pollQuotes(); },75000);
-  document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&Date.now()-lastPoll>60000) pollQuotes(); else wsSync(); });
+  pollQuotes();
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&Date.now()-lastPoll>POLL*1000) pollQuotes(); else wsSync(); });
 }
 function header(){
   const u=SCAN.universe||{};
