@@ -115,6 +115,19 @@ button{ cursor:pointer; }
 .links{ margin-top:12px; display:flex; flex-wrap:wrap; gap:12px; font-size:13px; }
 .links a{ color:var(--blue); }
 
+.live{ display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--muted); }
+.live a{ color:var(--blue); }
+.live .ld{ width:8px; height:8px; border-radius:50%; background:var(--dim); flex:0 0 auto; }
+.live.on{ color:var(--text); } .live.on .ld{ background:var(--up); }
+.price .lv{ display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--up); margin-inline-end:5px; vertical-align:2px; }
+.nowtag{ font-size:12px; font-weight:500; white-space:nowrap; }
+.nowtag.z{ color:var(--blue); } .nowtag.b{ color:var(--down); } .nowtag.a{ color:var(--muted); }
+.st > span{ display:flex; flex-direction:column; align-items:flex-start; gap:3px; }
+.keyform{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0 2px; }
+.keyform input{ height:34px; width:240px; max-width:100%; background:var(--bg); border:1px solid var(--line); border-radius:var(--radius); padding:0 10px; direction:ltr; }
+.keyform button{ height:34px; padding:0 14px; border:1px solid var(--line2); border-radius:var(--radius); background:var(--panel); }
+details.how p{ margin:8px 0 4px; max-width:78ch; }
+@media (prefers-reduced-motion:no-preference){ .live.on .ld{ animation:lp 2s ease-in-out infinite; } @keyframes lp{ 50%{ opacity:.35; } } }
 .empty{ padding:28px 14px; text-align:center; color:var(--muted); }
 details.how{ border:1px solid var(--line); border-radius:var(--radius); background:var(--bg2); padding:10px 14px; }
 details.how summary{ cursor:pointer; font-weight:600; }
@@ -126,6 +139,7 @@ details.how li{ margin-bottom:5px; }
   .lhead{ display:none; }
   .row{ grid-template-columns:1fr auto; grid-template-areas:"sym price" "st st" "pos pos" "nums nums"; gap:7px 10px; padding:11px 12px; }
   .row .sym{ grid-area:sym; } .row .price{ grid-area:price; text-align:end; } .row .st{ grid-area:st; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .st > span{ flex-direction:row; align-items:center; gap:10px; flex-wrap:wrap; }
   .row .posw{ grid-area:pos; } .row .nums{ grid-area:nums; display:flex; flex-wrap:wrap; gap:4px 16px; font-size:13px; }
   .row .nums > span{ display:inline-flex; gap:5px; align-items:baseline; }
   .k{ display:inline; }
@@ -142,6 +156,7 @@ details.how li{ margin-bottom:5px; }
   <header class="head">
     <h1>סורק Smart Money Zones</h1>
     <span class="sub" id="sub">טוען נתונים…</span>
+    <span class="live" id="live" hidden></span>
   </header>
 
   <div class="chips" id="chips" role="group" aria-label="סינון לפי מצב"></div>
@@ -186,6 +201,18 @@ details.how li{ margin-bottom:5px; }
     </ol>
   </details>
 
+  <details class="how" id="livebox" hidden>
+    <summary>מחירים בזמן אמת</summary>
+    <p>בשעות המסחר בניו יורק כל המחירים בלוח מתעדכנים בערך כל 5–10 דקות (מקור: Yahoo Finance). עם מפתח Twelve Data, המניה הפתוחה ושבע הראשונות ברשימה מתעדכנות ברצף, עסקה אחר עסקה. אם המפתח כבר שמור באפליקציית SMZ בדפדפן הזה, הוא מזוהה לבד.</p>
+    <p>הדירוג נקבע לפי מחירי סגירה ואינו משתנה במהלך היום. התווית "עכשיו" מראה היכן המחיר נמצא ברגע זה ביחס לאזור.</p>
+    <form class="keyform" id="keyform">
+      <label for="tdkey">מפתח Twelve Data</label>
+      <input type="password" id="tdkey" autocomplete="off" spellcheck="false">
+      <button type="submit">שמירה</button>
+      <span class="muted" id="keymsg"></span>
+    </form>
+  </details>
+
   <p class="foot" id="foot"></p>
 </div>
 
@@ -206,7 +233,30 @@ const G={
 const ORDER=['A','B','C','D','E','N'];
 const TRIG={flip:'התהפך לירוק',hl:'שפל עולה',up:'ירוק ועולה',none:'יורד'};
 const st={tf:LS.get('smzscan.tf','d'),ix:LS.get('smzscan.ix','all'),grades:LS.get('smzscan.g',['A','B']),sort:'sc',q:'',both:false,open:null};
-let SCAN=null;
+let SCAN=null, SHOWN=[];
+/* live prices. q[sym] = {p, t (unix), lo, hi, ws}. Filled from quotes.json on the repo's `live` branch and, with a Twelve Data key, from its stream. */
+const INLINE=!!window.__SCAN__;
+const SITE='https://yogevdonyo-maker.github.io/SMZ/scanner/';
+const REPO=(()=>{ const m=location.hostname.match(/^([^.]+)\.github\.io$/), seg=location.pathname.split('/').filter(Boolean)[0]; return m&&seg?m[1]+'/'+seg:'yogevdonyo-maker/SMZ'; })();
+const LIVE={q:{},t:0,open:false,ok:false,sock:null,subs:[],hb:null,wsOn:false,retry:0};
+const nyDay=t=>new Date(t*1000).toLocaleDateString('en-CA',{timeZone:'America/New_York'});
+const clock=t=>new Date(t*1000).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+// a quote counts as live only when it is newer than the close the scan was built on
+function liveOf(r){ const q=LIVE.q[r.s]; return q&&q.p!=null&&q.t&&nyDay(q.t)>SCAN.asOf?q:null; }
+function cur(r){ const q=liveOf(r); return q?{p:q.p,ch:(q.p/r.p-1)*100,q}:{p:r.p,ch:r.ch,q:null}; }
+function region(a,p){ const Z=lv(a); return p<a.lo?'broken':p<Z.smzBot?'deep':p<=Z.smzTop?'smz':p<=Z.inst?'inst':'above'; }
+const NOW={inst:['עכשיו באזור המוסדי','z'],smz:['עכשיו ב-SMZ','z'],deep:['עכשיו מתחת ל-SMZ','b'],broken:['עכשיו מתחת לשפל הרגל','b'],above:['עכשיו מעל האזור','a']};
+// the tag appears only when the live price sits in a different place than the last close did
+function nowTag(r,a){ const q=liveOf(r); if(!q) return ''; const was=region(a,r.p), is=region(a,q.p); if(was===is) return ''; return `<span class="nowtag ${NOW[is][1]}">${NOW[is][0]}</span>`; }
+function priceHTML(r){ const c=cur(r); return `<b>${c.q?'<i class="lv"></i>':''}${fmt(c.p)}</b><small class="${c.ch>=0?'upc':'dnc'}">${pct(c.ch,2)}</small>`; }
+const posPct=(a,p)=>Math.max(0,Math.min(100,(p-a.lo)/(a.hi-a.lo)*100));
+function liveLine(r,a){
+  const q=liveOf(r); if(!q) return '<small>אין כרגע מחיר חדש מהסגירה האחרונה</small>';
+  const Z=lv(a); let extra='';
+  if(q.p>=Z.smzBot&&q.p<=Z.inst){ const risk=q.p-a.sl; if(risk>0) extra=` · <small>סיכוי/סיכון מכאן <span class="num">${((Z.t1-q.p)/risk).toFixed(1)}</span></small>`; }
+  const range=q.lo!=null&&q.hi!=null?` · <small>טווח יומי <span class="num">${fmt(q.lo)}–${fmt(q.hi)}</span></small>`:'';
+  return `<span class="num">${fmt(q.p)}</span> <small><span class="num">${pct((q.p/r.p-1)*100,2)}</span> מהסגירה · ${clock(q.t)}${q.ws?' · זרם רציף':''}</small>${range}${extra}`;
+}
 
 const fmt=n=>{ if(n==null||!isFinite(n)) return '–'; const a=Math.abs(n); const dp=a>=1000?0:a>=5?2:a>=1?3:4; return n.toLocaleString('en-US',{minimumFractionDigits:dp,maximumFractionDigits:dp}); };
 const pct=(n,dp)=>(n>=0?'+':'−')+Math.abs(n).toFixed(dp==null?1:dp)+'%';
@@ -238,20 +288,22 @@ function render(){
   const key={sc:r=>-r[st.tf].sc,rr:r=>-(r[st.tf].rr||0),pos:r=>-r[st.tf].pos,s:r=>0}[st.sort];
   rows.sort((x,y)=>key(x)-key(y)||(x.s<y.s?-1:1));
   $('#count').textContent=rows.length?`${rows.length} מניות`:'';
-  if(!rows.length){ $('#rows').innerHTML=`<div class="empty">${searching?'לא נמצאה מניה כזו בסריקה.':'אין מניות במצב שנבחר. אפשר לסמן מצבים נוספים למעלה.'}</div>`; return; }
+  if(!rows.length){ SHOWN=[]; $('#rows').innerHTML=`<div class="empty">${searching?'לא נמצאה מניה כזו בסריקה.':'אין מניות במצב שנבחר. אפשר לסמן מצבים נוספים למעלה.'}</div>`; return; }
+  SHOWN=rows;
   $('#rows').innerHTML=rows.map(rowHTML).join('');
   if(st.open){ const el=document.getElementById('d-'+st.open); if(el) drawChart(el.querySelector('.chart'),SCAN.rows.find(r=>r.s===st.open)); }
+  wsSync();
 }
 function rowHTML(r){
   const a=r[st.tf], g=gOf(a), Z=lv(a), open=st.open===r.s;
-  const p=Math.max(0,Math.min(100,(r.p-a.lo)/(a.hi-a.lo)*100));
+  const p=posPct(a,cur(r).p);
   const idx=r.i.includes('x')?'<span class="tag">מעקב</span>':'';
   const isNew=a.was&&a.since===SCAN.asOf?'<span class="tag">חדש</span>':'';
   const bx=a.bx?`<i class="sq" style="background:var(${a.bx[0]>0?'--up':'--down'})"></i>${TRIG[a.bx[2]]}`:'–';
   return `<div class="item"><button type="button" class="row" data-s="${r.s}" aria-expanded="${open}">
     <span class="sym"><b class="num">${esc(r.s)}</b>${idx}${isNew}<small>${esc(r.n)}</small></span>
-    <span class="price num"><b>${fmt(r.p)}</b><small class="${r.ch>=0?'upc':'dnc'}">${pct(r.ch,2)}</small></span>
-    <span class="st"><span><span class="badge g-${g}">${G[g].t}</span></span></span>
+    <span class="price num">${priceHTML(r)}</span>
+    <span class="st"><span><span class="badge g-${g}">${G[g].t}</span><span class="nowslot">${nowTag(r,a)}</span></span></span>
     <span class="posw"><span class="pos" style="display:block"><i class="zs"></i><i class="zi"></i><i class="pt" style="left:${p.toFixed(1)}%"></i></span></span>
     <span class="nums">
       <span><span class="k">אזור</span><span class="num">${fmt(Z.smzBot)}–${fmt(Z.inst)}</span></span>
@@ -279,6 +331,7 @@ function detailHTML(r){
     <div class="plan"><h3>תוכנית לפי השיטה</h3>
       <p class="act g-${g}">${G[g].act}${since}</p>
       <dl>
+        <dt>מחיר עכשיו</dt><dd class="lvline">${liveLine(r,a)}</dd>
         <dt>רגל</dt><dd><span class="num">${fmt(a.lo)}</span> <small>(${heDate(a.lt)})</small> ← <span class="num">${fmt(a.hi)}</span> <small>(${heDate(a.ht)})</small></dd>
         <dt>אזור מוסדי</dt><dd><span class="num">${fmt(Z.smzTop)}–${fmt(Z.inst)}</span></dd>
         <dt>Smart Money Zone</dt><dd><span class="num">${fmt(Z.smzBot)}–${fmt(Z.smzTop)}</span></dd>
@@ -302,14 +355,15 @@ function detailHTML(r){
 function drawChart(box,r){
   const a=r[st.tf], Z=lv(a), ser=st.tf==='d'?r.cd:r.cw, cal=(SCAN.cal||{})[st.tf]||[];
   const stop=stopOf(a), W=Math.max(300,box.clientWidth), H=box.clientWidth<520?240:290, m={l:8,r:104,t:14,b:22};
+  const c=cur(r), lp=c.q?c.p:null;
   const dates=cal.slice(-ser.length); const n=ser.length;
-  let lo=Math.min(Math.min.apply(null,ser),stop), hi=Math.max(Math.max.apply(null,ser),Z.t1); const pad=(hi-lo)*0.06; lo-=pad; hi+=pad;
+  let lo=Math.min(Math.min.apply(null,ser),stop), hi=Math.max(Math.max.apply(null,ser),Z.t1); if(lp!=null){ lo=Math.min(lo,lp); hi=Math.max(hi,lp); } const pad=(hi-lo)*0.06; lo-=pad; hi+=pad;
   const x=i=>m.l+(n<2?0:i/(n-1))*(W-m.l-m.r), y=v=>m.t+(hi-v)/(hi-lo)*(H-m.t-m.b);
   const path=ser.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join('');
   const band=(top,bot,fill)=>`<rect x="${m.l}" y="${y(top).toFixed(1)}" width="${W-m.l-m.r}" height="${Math.max(1,y(bot)-y(top)).toFixed(1)}" fill="var(${fill})"/>`;
   const hline=(v,c,dash)=>`<line x1="${m.l}" x2="${W-m.r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="var(${c})" stroke-width="1" ${dash?'stroke-dasharray="4 3"':''}/>`;
   // right-edge labels, pushed apart so they never overlap
-  const labs=[{v:Z.t1,t:'יעד 1',c:'--up'},{v:Z.inst,t:'מוסדי',c:'--blue'},{v:Z.smzTop,t:'SMZ',c:'--smz'},{v:stop,t:'סטופ',c:'--down'},{v:r.p,t:'מחיר',c:'--text',b:1}]
+  const labs=[{v:Z.t1,t:'יעד 1',c:'--up'},{v:Z.inst,t:'מוסדי',c:'--blue'},{v:Z.smzTop,t:'SMZ',c:'--smz'},{v:stop,t:'סטופ',c:'--down'},{v:c.p,t:lp!=null?'עכשיו':'מחיר',c:'--text',b:1}]
     .map(o=>Object.assign(o,{y:y(o.v)})).sort((p,q)=>p.y-q.y);
   for(let i=1;i<labs.length;i++) if(labs[i].y-labs[i-1].y<13) labs[i].y=labs[i-1].y+13;
   for(let i=labs.length-2;i>=0;i--){ if(labs[i+1].y>H-m.b){ labs[i+1].y=H-m.b; } if(labs[i+1].y-labs[i].y<13) labs[i].y=labs[i+1].y-13; }
@@ -318,6 +372,7 @@ function drawChart(box,r){
   const idxOf=d=>{ if(!dates.length||d<dates[0]) return -1; let k=-1; for(let i=0;i<dates.length;i++){ if(dates[i]<=d) k=i; else break; } return k; };
   const mark=(d,v,up)=>{ const i=idxOf(d); if(i<0) return ''; const cx=x(i), cy=y(Math.max(lo,Math.min(hi,ser[i]))); return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="var(--bg2)" stroke="var(--text)" stroke-width="1.5"/><text x="${cx.toFixed(1)}" y="${(cy+(up?-9:17)).toFixed(1)}" text-anchor="middle" font-size="11" fill="var(--muted)">${up?'שיא':'שפל'}</text>`; };
   const ticks=[]; if(dates.length){ const step=Math.max(1,Math.round(n/5)); for(let i=Math.floor(step/2);i<n;i+=step){ const d=dates[i]; ticks.push(`<text x="${x(i).toFixed(1)}" y="${H-5}" text-anchor="middle" font-size="11" fill="var(--muted)">${d.slice(5,7)}/${d.slice(2,4)}</text>`); } }
+  box.dataset.busy='';
   box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="height:${H}px" role="img" aria-label="גרף מחיר של ${esc(r.s)} עם אזורי הכניסה">
     ${band(Z.inst,Z.smzTop,'--inst-bg')}${band(Z.smzTop,Z.smzBot,'--smz-bg')}
     ${hline(Z.t1,'--up',1)}${hline(stop,'--down',1)}
@@ -325,6 +380,7 @@ function drawChart(box,r){
     <path d="${path}" fill="none" stroke="var(--text)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
     ${mark(a.lt,a.lo,false)}${mark(a.ht,a.hi,true)}
     <circle cx="${x(n-1).toFixed(1)}" cy="${y(ser[n-1]).toFixed(1)}" r="4" fill="var(--text)" stroke="var(--bg2)" stroke-width="2"/>
+    ${lp!=null?`<line x1="${x(n-1).toFixed(1)}" x2="${(W-m.r).toFixed(1)}" y1="${y(ser[n-1]).toFixed(1)}" y2="${y(lp).toFixed(1)}" stroke="var(--text)" stroke-width="2" stroke-dasharray="2 3"/><circle cx="${(W-m.r).toFixed(1)}" cy="${y(lp).toFixed(1)}" r="4" fill="var(--up)" stroke="var(--bg2)" stroke-width="2"/>`:''}
     ${labSVG}${ticks.join('')}
     <line class="xh" x1="0" x2="0" y1="${m.t}" y2="${H-m.b}" stroke="var(--dim)" stroke-width="1" visibility="hidden"/>
     <circle class="xd" r="4" fill="var(--blue)" stroke="var(--bg2)" stroke-width="2" visibility="hidden"/>
@@ -332,11 +388,78 @@ function drawChart(box,r){
   const svg=box.querySelector('svg'), xh=box.querySelector('.xh'), xd=box.querySelector('.xd'), tip=box.querySelector('.tip');
   const move=ev=>{ const rc=svg.getBoundingClientRect(); const px=(ev.clientX-rc.left)*W/rc.width; let i=Math.round((px-m.l)/(W-m.l-m.r)*(n-1)); i=Math.max(0,Math.min(n-1,i));
     const cx=x(i), cy=y(ser[i]); xh.setAttribute('x1',cx); xh.setAttribute('x2',cx); xh.setAttribute('visibility','visible'); xd.setAttribute('cx',cx); xd.setAttribute('cy',cy); xd.setAttribute('visibility','visible');
-    tip.hidden=false; tip.textContent=(dates[i]?heDate(dates[i])+' · ':'')+fmt(ser[i]); tip.style.left=Math.max(60,Math.min(rc.width-60,cx*rc.width/W))+'px'; tip.style.top=(cy*rc.height/H)+'px'; };
-  const leave=()=>{ xh.setAttribute('visibility','hidden'); xd.setAttribute('visibility','hidden'); tip.hidden=true; };
+    box.dataset.busy='1'; tip.hidden=false; tip.textContent=(dates[i]?heDate(dates[i])+' · ':'')+fmt(ser[i]); tip.style.left=Math.max(60,Math.min(rc.width-60,cx*rc.width/W))+'px'; tip.style.top=(cy*rc.height/H)+'px'; };
+  const leave=()=>{ box.dataset.busy=''; xh.setAttribute('visibility','hidden'); xd.setAttribute('visibility','hidden'); tip.hidden=true; };
   svg.addEventListener('pointermove',move); svg.addEventListener('pointerdown',move); svg.addEventListener('pointerleave',leave);
 }
 
+/* ---------- live prices ---------- */
+// update the cells that depend on the price, without rebuilding the list
+function refreshLive(syms){
+  const tf=st.tf;
+  for(const r of SHOWN){
+    if(syms&&!syms.includes(r.s)) continue; const a=r[tf]; if(!a) continue;
+    const el=document.querySelector(`.row[data-s="${r.s}"]`); if(!el) continue;
+    el.querySelector('.price').innerHTML=priceHTML(r);
+    el.querySelector('.pt').style.left=posPct(a,cur(r).p).toFixed(1)+'%';
+    el.querySelector('.nowslot').innerHTML=nowTag(r,a);
+    if(st.open===r.s){ const d=document.getElementById('d-'+r.s); if(d){ d.querySelector('.lvline').innerHTML=liveLine(r,a); const box=d.querySelector('.chart'); if(!box.dataset.busy) drawChart(box,r); } }
+  }
+}
+function liveStatus(){
+  const el=$('#live'); el.hidden=false;
+  if(INLINE){ el.className='live'; el.innerHTML=`<i class="ld"></i>מחירי סגירה. מחירים בזמן אמת: <a href="${SITE}" target="_blank" rel="noopener">הגרסה המתעדכנת</a>`; return; }
+  const n=SCAN.rows.filter(r=>liveOf(r)).length;
+  if(!LIVE.ok){ el.className='live'; el.innerHTML='<i class="ld"></i>אין כרגע מחירים חיים'; return; }
+  if(!n){ el.className='live'; el.innerHTML='<i class="ld"></i>השוק סגור · מוצגים מחירי הסגירה'; return; }
+  const ws=LIVE.wsOn&&LIVE.subs.length?` · זרם רציף ל-${LIVE.subs.length} מניות`:'';
+  el.className='live'+(LIVE.open?' on':''); el.innerHTML=`<i class="ld"></i>${LIVE.open?'מחירים חיים':'השוק נסגר · מחירי היום'} · עודכן ${clock(LIVE.t)}${ws}`;
+}
+let lastPoll=0, lastRescan=0;
+async function pollQuotes(){
+  if(INLINE||!SCAN) return; lastPoll=Date.now(); let j=null;
+  try{ const r=await fetch(`https://api.github.com/repos/${REPO}/contents/quotes.json?ref=live`,{headers:{Accept:'application/vnd.github.raw+json'},cache:'no-store'}); if(r.ok) j=await r.json(); }catch(e){}
+  if(!j){ try{ const r=await fetch(`https://raw.githubusercontent.com/${REPO}/live/quotes.json?m=${Math.floor(Date.now()/60000)}`,{cache:'no-store'}); if(r.ok) j=await r.json(); }catch(e){} }
+  if(j&&j.q){
+    LIVE.ok=true; LIVE.t=j.t; LIVE.open=!!j.open;
+    for(const s in j.q){ const v=j.q[s], old=LIVE.q[s]; if(old&&old.ws&&old.t>=v[1]){ old.lo=v[2]; old.hi=v[3]; continue; } LIVE.q[s]={p:v[0],t:v[1],lo:v[2],hi:v[3]}; }
+    // a newer daily scan was published: load it
+    if(j.scanAsOf&&j.scanAsOf>SCAN.asOf&&Date.now()-lastRescan>5*60000){ lastRescan=Date.now(); try{ const r=await fetch('data/scan.json',{cache:'no-store'}); if(r.ok){ const d=await r.json(); if(d.asOf>SCAN.asOf){ SCAN=d; header(); render(); } } }catch(e){} }
+    refreshLive(null);
+  }
+  liveStatus(); wsSync();
+}
+/* Twelve Data stream: tick-by-tick for the open ticker and the top of the list (the free plan allows 8 symbols) */
+function tdKey(){ try{ const v=localStorage.getItem('smz.apikey'); if(!v) return ''; try{ return String(JSON.parse(v)||''); }catch(e){ return v; } }catch(e){ return ''; } }
+function wsWanted(){ const out=[]; if(st.open) out.push(st.open); for(const r of SHOWN){ if(out.length>=8) break; if(!out.includes(r.s)) out.push(r.s); } return out; }
+function wsClose(){ if(LIVE.sock){ try{ LIVE.sock.onclose=null; LIVE.sock.close(); }catch(e){} } LIVE.sock=null; LIVE.subs=[]; LIVE.wsOn=false; clearInterval(LIVE.hb); LIVE.hb=null; }
+function wsSync(){
+  if(INLINE||!('WebSocket' in window)) return; const key=tdKey();
+  if(!key||!LIVE.open||document.hidden){ if(LIVE.sock){ wsClose(); liveStatus(); } return; }
+  if(!LIVE.sock){
+    let sock; try{ sock=new WebSocket('wss://ws.twelvedata.com/v1/quotes/price?apikey='+encodeURIComponent(key)); }catch(e){ return; }
+    LIVE.sock=sock;
+    sock.onopen=()=>{ LIVE.wsOn=true; LIVE.retry=0; LIVE.hb=setInterval(()=>{ try{ sock.send(JSON.stringify({action:'heartbeat'})); }catch(e){} },10000); wsSync(); liveStatus(); };
+    sock.onmessage=ev=>{ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+      if(m.event==='price'&&isFinite(+m.price)){ const old=LIVE.q[m.symbol]||{}; LIVE.q[m.symbol]={p:+m.price,t:m.timestamp||Math.round(Date.now()/1000),lo:old.lo,hi:old.hi,ws:1}; refreshLive([m.symbol]); }
+      else if(m.event==='subscribe-status'&&m.fails&&m.fails.length){ const f=m.fails.map(x=>x.symbol); LIVE.subs=LIVE.subs.filter(x=>!f.includes(x)); liveStatus(); } };
+    sock.onclose=()=>{ clearInterval(LIVE.hb); LIVE.hb=null; LIVE.sock=null; LIVE.subs=[]; const was=LIVE.wsOn; LIVE.wsOn=false; liveStatus(); if(was&&LIVE.retry<6){ LIVE.retry++; setTimeout(wsSync,Math.min(30000,2000*LIVE.retry)); } };
+    sock.onerror=()=>{};
+    return;
+  }
+  if(LIVE.sock.readyState!==1) return;
+  const want=wsWanted(), gone=LIVE.subs.filter(x=>!want.includes(x)), add=want.filter(x=>!LIVE.subs.includes(x));
+  try{ if(gone.length) LIVE.sock.send(JSON.stringify({action:'unsubscribe',params:{symbols:gone.join(',')}}));
+       if(add.length) LIVE.sock.send(JSON.stringify({action:'subscribe',params:{symbols:add.join(',')}})); }catch(e){}
+  if(gone.length||add.length){ LIVE.subs=want; liveStatus(); }
+}
+function liveStart(){
+  liveStatus(); if(INLINE) return;
+  $('#livebox').hidden=false; $('#keymsg').textContent=tdKey()?'מפתח שמור בדפדפן הזה.':'';
+  $('#keyform').addEventListener('submit',e=>{ e.preventDefault(); const v=$('#tdkey').value.trim(); try{ if(v) localStorage.setItem('smz.apikey',JSON.stringify(v)); else localStorage.removeItem('smz.apikey'); $('#keymsg').textContent=v?'נשמר. הזרם יתחבר כשהשוק פתוח.':'המפתח הוסר.'; }catch(err){ $('#keymsg').textContent='הדפדפן חסם שמירה.'; } $('#tdkey').value=''; wsClose(); wsSync(); liveStatus(); });
+  pollQuotes(); setInterval(()=>{ if(!document.hidden) pollQuotes(); },75000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&Date.now()-lastPoll>60000) pollQuotes(); else wsSync(); });
+}
 function header(){
   const u=SCAN.universe||{};
   $('#sub').innerHTML=`נכון לסגירת המסחר ב-${heDate(SCAN.asOf)} · <span class="num">${u.total||SCAN.rows.length}</span> מניות: S&amp;P 500, נאסד"ק 100 ורשימת מעקב`;
@@ -348,7 +471,7 @@ function header(){
     +((SCAN.failed||[]).length?` לא נטענו: <span class="num">${SCAN.failed.map(esc).join(', ')}</span>.`:'');
 }
 function start(data){
-  SCAN=data; header(); render();
+  SCAN=data; header(); render(); liveStart();
   $('#chips').addEventListener('click',e=>{ const b=e.target.closest('.chip'); if(!b) return; const g=b.dataset.g; st.grades=st.grades.includes(g)?st.grades.filter(x=>x!==g):st.grades.concat(g); LS.set('smzscan.g',st.grades); render(); });
   document.addEventListener('click',e=>{ const t=e.target.closest('[data-tf]'); if(t){ st.tf=t.dataset.tf; LS.set('smzscan.tf',st.tf); render(); return; }
     const i=e.target.closest('[data-ix]'); if(i){ st.ix=i.dataset.ix; LS.set('smzscan.ix',st.ix); render(); return; }
