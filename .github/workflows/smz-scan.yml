@@ -1,0 +1,36 @@
+name: SMZ daily scan
+
+on:
+  schedule:
+    # after the US close, Monday–Friday (21:45 UTC = 16:45 New York in winter, 17:45 in summer)
+    - cron: '45 21 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: smz-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Engine checks
+        run: node scanner/test/run-fixture.js
+      - name: Scan S&P 500 + Nasdaq-100
+        run: node scanner/scan.js
+      - name: Publish results
+        run: |
+          git config user.name "smz-scan"
+          git config user.email "actions@users.noreply.github.com"
+          git add scanner/data/scan.json scanner/data/universe.json
+          if git diff --cached --quiet; then echo "no change"; exit 0; fi
+          git commit -m "scan: $(node -p "require('./scanner/data/scan.json').asOf")"
+          git push

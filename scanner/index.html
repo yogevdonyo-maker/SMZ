@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>סורק Smart Money Zones</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap">
+<style>
+/* layout: one scanning list. summary chips on top, a dense row per ticker, the trade plan opens under the row. tokens follow the SMZ app. */
+:root{
+  --bg:#ffffff; --bg2:#f8f9fd; --panel:#f0f3fa; --line:#e0e3eb; --line2:#d1d4dc;
+  --text:#131722; --muted:#6a6d78; --dim:#9598a1;
+  --up:#089981; --down:#f23645; --blue:#2962ff; --amber:#b86e00; --smz:#8e24aa;
+  --up-bg:rgba(8,153,129,.12); --down-bg:rgba(242,54,69,.10); --blue-bg:rgba(41,98,255,.11); --amber-bg:rgba(224,138,0,.14); --smz-bg:rgba(142,36,170,.26); --inst-bg:rgba(41,98,255,.14);
+  --radius:6px;
+  --font:'Heebo',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#131722; --bg2:#181c27; --panel:#1e222d; --line:#2a2e39; --line2:#363a45;
+  --text:#d1d4dc; --muted:#8b8f9c; --dim:#5d616e;
+  --up:#26a69a; --down:#ef5350; --blue:#5b8cff; --amber:#ffb74d; --smz:#ce93d8;
+  --up-bg:rgba(38,166,154,.16); --down-bg:rgba(239,83,80,.14); --blue-bg:rgba(91,140,255,.16); --amber-bg:rgba(255,183,77,.14); --smz-bg:rgba(206,147,216,.30); --inst-bg:rgba(91,140,255,.18);
+  color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#131722; --bg2:#181c27; --panel:#1e222d; --line:#2a2e39; --line2:#363a45;
+  --text:#d1d4dc; --muted:#8b8f9c; --dim:#5d616e;
+  --up:#26a69a; --down:#ef5350; --blue:#5b8cff; --amber:#ffb74d; --smz:#ce93d8;
+  --up-bg:rgba(38,166,154,.16); --down-bg:rgba(239,83,80,.14); --blue-bg:rgba(91,140,255,.16); --amber-bg:rgba(255,183,77,.14); --smz-bg:rgba(206,147,216,.30); --inst-bg:rgba(91,140,255,.18);
+  color-scheme:dark; }
+:root{ padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
+*,*::before,*::after{ box-sizing:border-box; }
+body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--font); font-size:14px; line-height:1.45; }
+button,input,select{ font:inherit; color:inherit; }
+button{ cursor:pointer; }
+:focus-visible{ outline:2px solid var(--blue); outline-offset:1px; }
+.app{ max-width:1240px; margin:0 auto; padding-block:18px 40px; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px)); display:flex; flex-direction:column; gap:14px; }
+.num{ direction:ltr; unicode-bidi:isolate; font-variant-numeric:tabular-nums; }
+.muted{ color:var(--muted); }
+
+/* header */
+.head{ display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 14px; }
+.head h1{ margin:0; font-size:20px; font-weight:700; letter-spacing:.1px; }
+.head .sub{ color:var(--muted); font-size:13px; }
+
+/* summary chips = grade filter */
+.chips{ display:flex; flex-wrap:wrap; gap:8px; }
+.chip{ display:flex; align-items:center; gap:8px; padding:7px 12px; border:1px solid var(--line); border-radius:var(--radius); background:var(--bg2); min-height:40px; text-align:start; }
+.chip b{ font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; }
+.chip span{ font-size:12.5px; color:var(--muted); }
+.chip .dot{ width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
+.chip[aria-pressed="true"]{ border-color:var(--text); background:var(--panel); }
+.chip[aria-pressed="true"] span{ color:var(--text); }
+.chip:hover{ border-color:var(--line2); }
+
+/* controls */
+.bar{ display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; }
+.seg{ display:inline-flex; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--bg2); }
+.seg button{ border:0; background:transparent; padding:7px 13px; min-height:36px; color:var(--muted); }
+.seg button + button{ border-inline-start:1px solid var(--line); }
+.seg button[aria-pressed="true"]{ background:var(--panel); color:var(--text); font-weight:600; }
+.bar input[type=search], .bar select{ height:36px; background:var(--bg2); border:1px solid var(--line); border-radius:var(--radius); padding:0 10px; }
+.bar input[type=search]{ width:170px; }
+.bar label.chk{ display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13px; }
+.count{ color:var(--muted); font-size:13px; margin-inline-start:auto; }
+
+/* list */
+.list{ border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
+.row, .lhead{ display:grid; grid-template-columns:minmax(150px,1.5fr) 92px 150px minmax(150px,1.4fr) 128px 76px 76px 52px 112px 44px; gap:10px; align-items:center; padding:9px 12px; }
+.lhead{ background:var(--bg2); color:var(--muted); font-size:12px; border-bottom:1px solid var(--line); }
+.row{ width:100%; border:0; border-bottom:1px solid var(--line); background:var(--bg); text-align:start; }
+.row:hover{ background:var(--bg2); }
+.row[aria-expanded="true"]{ background:var(--panel); }
+.item:last-child .row[aria-expanded="false"]{ border-bottom:0; }
+.sym{ min-width:0; }
+.sym b{ font-size:15px; font-weight:700; letter-spacing:.3px; }
+.sym small{ display:block; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; direction:ltr; text-align:right; }
+.tag{ font-size:10.5px; color:var(--muted); border:1px solid var(--line2); border-radius:3px; padding:0 4px; margin-inline-start:5px; vertical-align:2px; }
+.price b{ font-weight:600; }
+.price small{ display:block; font-size:12px; }
+.upc{ color:var(--up); } .dnc{ color:var(--down); }
+.badge{ display:inline-flex; align-items:center; gap:6px; padding:3px 9px; border-radius:12px; font-size:12.5px; font-weight:500; white-space:nowrap; }
+.badge i{ font-style:normal; font-weight:700; }
+.g-A{ background:var(--up-bg); color:var(--up); } .g-B{ background:var(--blue-bg); color:var(--blue); } .g-C{ background:var(--amber-bg); color:var(--amber); }
+.g-D{ background:var(--down-bg); color:var(--down); } .g-E,.g-N{ background:var(--panel); color:var(--muted); }
+.d-A{ background:var(--up); } .d-B{ background:var(--blue); } .d-C{ background:var(--amber); } .d-D{ background:var(--down); } .d-E,.d-N{ background:var(--dim); }
+/* position bar: leg low at the left, leg high at the right, zones fixed, the dot is the last close */
+.pos{ position:relative; height:14px; direction:ltr; }
+.pos::before{ content:""; position:absolute; inset:6px 0 6px 0; background:var(--line2); border-radius:1px; }
+.pos .zi, .pos .zs{ position:absolute; top:1px; bottom:1px; }
+.pos .zi{ left:21.4%; width:16.8%; background:var(--inst-bg); border-inline:1px solid var(--blue); }
+.pos .zs{ left:17.4%; width:4%; background:var(--smz-bg); border-inline-start:1px solid var(--smz); }
+.pos .pt{ position:absolute; top:2px; width:10px; height:10px; margin-left:-5px; border-radius:50%; background:var(--text); box-shadow:0 0 0 2px var(--bg); }
+.row[aria-expanded="true"] .pos .pt{ box-shadow:0 0 0 2px var(--panel); }
+.bx{ display:flex; align-items:center; gap:6px; font-size:12.5px; white-space:nowrap; }
+.bx .sq{ width:9px; height:9px; border-radius:2px; flex:0 0 auto; }
+.score{ font-weight:600; text-align:end; }
+.k{ display:none; color:var(--muted); font-size:11.5px; }
+
+/* detail */
+.detail{ border-bottom:1px solid var(--line); background:var(--bg2); padding:14px 12px 16px; display:grid; grid-template-columns:minmax(0,1.55fr) minmax(280px,1fr); gap:18px; }
+.chartbox{ min-width:0; }
+.chartbox h3, .plan h3{ margin:0 0 8px; font-size:14px; font-weight:600; }
+.chart{ position:relative; direction:ltr; }
+.chart svg{ display:block; width:100%; height:290px; }
+.tip{ position:absolute; pointer-events:none; background:var(--bg); border:1px solid var(--line2); border-radius:4px; padding:3px 8px; font-size:12px; white-space:nowrap; transform:translate(-50%,-135%); }
+.key{ display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:8px; font-size:12px; color:var(--muted); }
+.key span::before{ content:""; display:inline-block; width:12px; height:10px; margin-inline-end:5px; vertical-align:-1px; border-radius:2px; background:var(--c); }
+.plan dl{ margin:0; display:grid; grid-template-columns:auto 1fr; gap:6px 12px; font-size:13.5px; }
+.plan dt{ color:var(--muted); white-space:nowrap; }
+.plan dd{ margin:0; min-width:0; }
+.plan dd small{ color:var(--muted); }
+.plan .sep{ grid-column:1 / -1; height:1px; background:var(--line); margin:3px 0; }
+.act{ margin:0 0 10px; padding:8px 10px; border-radius:var(--radius); font-size:13.5px; font-weight:500; }
+.links{ margin-top:12px; display:flex; flex-wrap:wrap; gap:12px; font-size:13px; }
+.links a{ color:var(--blue); }
+
+.empty{ padding:28px 14px; text-align:center; color:var(--muted); }
+details.how{ border:1px solid var(--line); border-radius:var(--radius); background:var(--bg2); padding:10px 14px; }
+details.how summary{ cursor:pointer; font-weight:600; }
+details.how ol{ margin:10px 0 4px; padding-inline-start:20px; max-width:72ch; }
+details.how li{ margin-bottom:5px; }
+.foot{ color:var(--muted); font-size:12.5px; max-width:90ch; }
+
+@media (max-width:980px){
+  .lhead{ display:none; }
+  .row{ grid-template-columns:1fr auto; grid-template-areas:"sym price" "st st" "pos pos" "nums nums"; gap:7px 10px; padding:11px 12px; }
+  .row .sym{ grid-area:sym; } .row .price{ grid-area:price; text-align:end; } .row .st{ grid-area:st; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .row .posw{ grid-area:pos; } .row .nums{ grid-area:nums; display:flex; flex-wrap:wrap; gap:4px 16px; font-size:13px; }
+  .row .nums > span{ display:inline-flex; gap:5px; align-items:baseline; }
+  .k{ display:inline; }
+  .detail{ grid-template-columns:minmax(0,1fr); }
+  .chart svg{ height:240px; }
+  .count{ margin-inline-start:0; width:100%; }
+}
+@media (min-width:981px){ .row .st, .row .nums{ display:contents; } }
+@media (prefers-reduced-motion:no-preference){ .row, .chip{ transition:background-color .12s; } }
+</style>
+</head>
+<body>
+<div class="app" dir="rtl" lang="he">
+  <header class="head">
+    <h1>סורק Smart Money Zones</h1>
+    <span class="sub" id="sub">טוען נתונים…</span>
+  </header>
+
+  <div class="chips" id="chips" role="group" aria-label="סינון לפי מצב"></div>
+
+  <div class="bar">
+    <div class="seg" role="group" aria-label="מסגרת זמן">
+      <button type="button" id="tf-d" data-tf="d">יומי · עסקה ל-30–90 יום</button>
+      <button type="button" id="tf-w" data-tf="w">שבועי · 6–12 חודשים</button>
+    </div>
+    <div class="seg" role="group" aria-label="מדד">
+      <button type="button" id="ix-all" data-ix="all">הכול</button>
+      <button type="button" id="ix-sp" data-ix="sp">S&amp;P 500</button>
+      <button type="button" id="ix-ndx" data-ix="ndx">נאסד"ק 100</button>
+    </div>
+    <input type="search" id="q" placeholder="חיפוש סימול או שם" aria-label="חיפוש סימול או שם">
+    <select id="sort" aria-label="מיון">
+      <option value="sc">מיון: ציון</option>
+      <option value="rr">מיון: סיכוי/סיכון</option>
+      <option value="pos">מיון: עומק באזור</option>
+      <option value="s">מיון: סימול</option>
+    </select>
+    <label class="chk"><input type="checkbox" id="both"> באזור בשתי מסגרות הזמן</label>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="list" id="list">
+    <div class="lhead">
+      <span>מניה</span><span>מחיר</span><span>מצב</span><span>מיקום ברגל (שפל ← שיא)</span><span>אזור כניסה</span><span>סטופ</span><span>יעד 1</span><span>סיכוי/סיכון</span><span>BX Trender</span><span style="text-align:end">ציון</span>
+    </div>
+    <div id="rows"></div>
+  </div>
+
+  <details class="how" id="how">
+    <summary>איך הסורק מחליט</summary>
+    <ol>
+      <li><b>הרגל.</b> בכל מסגרת זמן הסורק מאתר את המהלך העולה האחרון ששבר מבנה (BOS): משפל סווינג ועד השיא הגבוה ביותר שנקבע אחריו. רגל נפסלת ברגע שהמחיר יורד מתחת לשפל שלה.</li>
+      <li><b>האזורים.</b> תיקון של 61.8%–78.6% מהשיא הוא אזור הקנייה המוסדי, ותיקון של 78.6%–82.6% הוא ה-Smart Money Zone, אזור הכניסה המועדף.</li>
+      <li><b>אישור.</b> כניסה מסומנת כמאושרת רק כשהמחיר סגר בתוך האזור וה-BX Trender הקצר הפסיק לרדת: שפל עולה בזמן שהוא עדיין אדום, או מעבר מאדום לירוק בשלושת הנרות האחרונים.</li>
+      <li><b>סטופ.</b> הסטופ הצמוד יושב מתחת ל-SMZ (אחוז אחד או חצי ATR, הגדול מביניהם) ומופעל בסגירה מתחתיו. הסטופ המבני יושב מתחת לשפל הרגל.</li>
+      <li><b>יציאה.</b> יעד 1 הוא שיא הרגל. יעד 2 ויעד 3 הם הרחבות 1.272 ו-1.618. לפי השיטה מממשים חלק ביעד 1 ומחזיקים את היתרה עד יעד 2 או עד שה-BX חוזר לאדום.</li>
+      <li><b>ציון.</b> 0–100: עומק באזור, סוג האישור, יחס סיכוי/סיכון, מספר הפעמים שהאזור כבר נבדק, והסכמה של מסגרת הזמן השנייה.</li>
+    </ol>
+  </details>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<!--DATA-->
+<script>
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
+const G={
+  A:{t:'כניסה מאושרת',h:'באזור, עם אישור BX',act:'המחיר באזור הכניסה וה-BX Trender הפסיק לרדת. לפי השיטה זו נקודת הכניסה.'},
+  B:{t:'באזור · ממתינה לאישור',h:'באזור, BX עדיין יורד',act:'המחיר באזור הכניסה אבל ה-BX Trender עדיין יורד. לפי השיטה ממתינים לשפל עולה ב-BX לפני כניסה.'},
+  C:{t:'מתקרבת לאזור',h:'עד 1.5 ATR מעל האזור',act:'המחיר קרוב לאזור המוסדי ועדיין לא נכנס אליו. אפשר להציב התראה בגבול העליון של האזור.'},
+  D:{t:'מתחת ל-SMZ',h:'סגרה מתחת לאזור',act:'המחיר סגר מתחת ל-Smart Money Zone, כך שהסטופ הצמוד כבר נפגע. הרגל תקפה רק כל עוד השפל שלה מחזיק.'},
+  E:{t:'יצאה מהאזור',h:'נגעה באזור וחזרה מעליו',act:'המחיר נגע באזור לאחרונה וכבר עלה מעליו. כניסה חדשה רק בחזרה לאזור.'},
+  N:{t:'מעל האזור',h:'רחוקה מהאזור',act:'המחיר רחוק מעל אזור הכניסה. ממתינים לתיקון.'}
+};
+const ORDER=['A','B','C','D','E','N'];
+const TRIG={flip:'התהפך לירוק',hl:'שפל עולה',up:'ירוק ועולה',none:'יורד'};
+const st={tf:LS.get('smzscan.tf','d'),ix:LS.get('smzscan.ix','all'),grades:LS.get('smzscan.g',['A','B']),sort:'sc',q:'',both:false,open:null};
+let SCAN=null;
+
+const fmt=n=>{ if(n==null||!isFinite(n)) return '–'; const a=Math.abs(n); const dp=a>=1000?0:a>=5?2:a>=1?3:4; return n.toLocaleString('en-US',{minimumFractionDigits:dp,maximumFractionDigits:dp}); };
+const pct=(n,dp)=>(n>=0?'+':'−')+Math.abs(n).toFixed(dp==null?1:dp)+'%';
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const heDate=d=>{ if(!d) return ''; const [y,m,dd]=d.split('-'); return `${+dd}.${+m}.${y}`; };
+const gOf=a=>a?(a.g==='-'?'N':a.g):null;
+function lv(a){ const c=SCAN.cfg, R=a.hi-a.lo, r=x=>a.hi-R*x; return {inst:r(c.inst),smzTop:r(c.smzTop),smzBot:r(c.smzBot),e1:r(c.entry1),e2:r(c.entry2),t1:a.hi,t2:a.lo+R*c.ext1,t3:a.lo+R*c.ext2}; }
+const inZone=a=>a&&(a.st==='inst'||a.st==='smz');
+const stopOf=a=>a.st==='deep'?a.ss:a.sl;
+
+function visible(){
+  const q=st.q.trim().toUpperCase();
+  return SCAN.rows.filter(r=>{
+    const a=r[st.tf]; if(!a) return false;
+    if(st.ix!=='all'&&!r.i.includes(st.ix)) return false;
+    if(st.both&&!(inZone(r.d)&&inZone(r.w))) return false;
+    if(q) return r.s.startsWith(q)||r.n.toUpperCase().includes(q);
+    return true;
+  });
+}
+function render(){
+  if(!SCAN) return;
+  for(const b of document.querySelectorAll('[data-tf]')) b.setAttribute('aria-pressed',String(b.dataset.tf===st.tf));
+  for(const b of document.querySelectorAll('[data-ix]')) b.setAttribute('aria-pressed',String(b.dataset.ix===st.ix));
+  const base=visible(); const cnt={}; for(const r of base){ const g=gOf(r[st.tf]); cnt[g]=(cnt[g]||0)+1; }
+  $('#chips').innerHTML=ORDER.map(g=>`<button type="button" class="chip" data-g="${g}" aria-pressed="${st.grades.includes(g)}" title="${G[g].h}"><i class="dot d-${g}"></i><b class="num">${cnt[g]||0}</b><span>${G[g].t}</span></button>`).join('');
+  const searching=!!st.q.trim();
+  let rows=base.filter(r=>searching||st.grades.includes(gOf(r[st.tf])));
+  const key={sc:r=>-r[st.tf].sc,rr:r=>-(r[st.tf].rr||0),pos:r=>-r[st.tf].pos,s:r=>0}[st.sort];
+  rows.sort((x,y)=>key(x)-key(y)||(x.s<y.s?-1:1));
+  $('#count').textContent=rows.length?`${rows.length} מניות`:'';
+  if(!rows.length){ $('#rows').innerHTML=`<div class="empty">${searching?'לא נמצאה מניה כזו בסריקה.':'אין מניות במצב שנבחר. אפשר לסמן מצבים נוספים למעלה.'}</div>`; return; }
+  $('#rows').innerHTML=rows.map(rowHTML).join('');
+  if(st.open){ const el=document.getElementById('d-'+st.open); if(el) drawChart(el.querySelector('.chart'),SCAN.rows.find(r=>r.s===st.open)); }
+}
+function rowHTML(r){
+  const a=r[st.tf], g=gOf(a), Z=lv(a), open=st.open===r.s;
+  const p=Math.max(0,Math.min(100,(r.p-a.lo)/(a.hi-a.lo)*100));
+  const idx=r.i.includes('x')?'<span class="tag">מעקב</span>':'';
+  const isNew=a.was&&a.since===SCAN.asOf?'<span class="tag">חדש</span>':'';
+  const bx=a.bx?`<i class="sq" style="background:var(${a.bx[0]>0?'--up':'--down'})"></i>${TRIG[a.bx[2]]}`:'–';
+  return `<div class="item"><button type="button" class="row" data-s="${r.s}" aria-expanded="${open}">
+    <span class="sym"><b class="num">${esc(r.s)}</b>${idx}${isNew}<small>${esc(r.n)}</small></span>
+    <span class="price num"><b>${fmt(r.p)}</b><small class="${r.ch>=0?'upc':'dnc'}">${pct(r.ch,2)}</small></span>
+    <span class="st"><span><span class="badge g-${g}">${G[g].t}</span></span></span>
+    <span class="posw"><span class="pos" style="display:block"><i class="zs"></i><i class="zi"></i><i class="pt" style="left:${p.toFixed(1)}%"></i></span></span>
+    <span class="nums">
+      <span><span class="k">אזור</span><span class="num">${fmt(Z.smzBot)}–${fmt(Z.inst)}</span></span>
+      <span><span class="k">סטופ</span><span class="num">${fmt(stopOf(a))}</span></span>
+      <span><span class="k">יעד</span><span class="num">${fmt(Z.t1)}</span></span>
+      <span><span class="k">סיכוי/סיכון</span><span class="num">${a.rr==null?'–':a.rr.toFixed(1)}</span></span>
+      <span class="bx"><span class="k">BX</span>${bx}</span>
+      <span class="score num"><span class="k">ציון </span>${a.sc}</span>
+    </span>
+  </button>${open?detailHTML(r):''}</div>`;
+}
+function detailHTML(r){
+  const a=r[st.tf], g=gOf(a), Z=lv(a), other=st.tf==='d'?r.w:r.d, otherName=st.tf==='d'?'שבועי':'יומי';
+  const en=a.en, stop=stopOf(a), risk=(en-stop)/en*100, up=(Z.t1-en)/en*100;
+  const inz=inZone(a)||a.st==='deep';
+  const bxTxt=a.bx?`${TRIG[a.bx[2]]} <small class="num">(${a.bx[0]>0?'+':''}${a.bx[0]})</small>`:'–';
+  const outer=a.ol!=null?(()=>{ const O=lv({lo:a.ol,hi:a.oh}); return `<dt>האזור הבא למטה</dt><dd><span class="num">${fmt(O.smzBot)}–${fmt(O.inst)}</span> <small>רגל מ-<span class="num">${fmt(a.ol)}</span></small></dd>`; })():'';
+  const oth=other?`<dt>${otherName}</dt><dd>${G[gOf(other)].t} <small>אזור <span class="num">${fmt(lv(other).smzBot)}–${fmt(lv(other).inst)}</span></small></dd>`:`<dt>${otherName}</dt><dd><small>אין רגל עולה תקפה</small></dd>`;
+  const since=a.since&&a.since!==SCAN.asOf?` <small>במצב הזה מאז ${heDate(a.since)}</small>`:'';
+  return `<div class="detail" id="d-${r.s}">
+    <div class="chartbox"><h3><span class="num">${esc(r.s)}</span> · ${st.tf==='d'?'סגירות יומיות':'סגירות שבועיות'}</h3>
+      <div class="chart"></div>
+      <div class="key"><span style="--c:var(--inst-bg)">אזור קנייה מוסדי</span><span style="--c:var(--smz-bg)">Smart Money Zone</span><span style="--c:var(--up)">יעד 1</span><span style="--c:var(--down)">סטופ</span></div>
+    </div>
+    <div class="plan"><h3>תוכנית לפי השיטה</h3>
+      <p class="act g-${g}">${G[g].act}${since}</p>
+      <dl>
+        <dt>רגל</dt><dd><span class="num">${fmt(a.lo)}</span> <small>(${heDate(a.lt)})</small> ← <span class="num">${fmt(a.hi)}</span> <small>(${heDate(a.ht)})</small></dd>
+        <dt>אזור מוסדי</dt><dd><span class="num">${fmt(Z.smzTop)}–${fmt(Z.inst)}</span></dd>
+        <dt>Smart Money Zone</dt><dd><span class="num">${fmt(Z.smzBot)}–${fmt(Z.smzTop)}</span></dd>
+        <dt>כניסה</dt><dd>${inz?`<span class="num">${fmt(en)}</span> <small>הסגירה האחרונה, בתוך האזור</small>`:`<span class="num">${fmt(Z.e1)}</span> <small>לימיט באזור המוסדי</small> · <span class="num">${fmt(Z.e2)}</span> <small>לימיט ב-SMZ</small>`}</dd>
+        <dt>BX Trender</dt><dd>${bxTxt}</dd>
+        <div class="sep"></div>
+        <dt>סטופ צמוד</dt><dd><span class="num">${fmt(a.sl)}</span> <small>סגירה מתחת ל-SMZ</small></dd>
+        <dt>סטופ מבני</dt><dd><span class="num">${fmt(a.ss)}</span> <small>מתחת לשפל הרגל</small></dd>
+        <dt>יעד 1</dt><dd><span class="num">${fmt(Z.t1)}</span> <small>שיא הרגל · <span class="num">${pct(up,0)}</span></small></dd>
+        <dt>יעד 2 · יעד 3</dt><dd><span class="num">${fmt(Z.t2)}</span> · <span class="num">${fmt(Z.t3)}</span> <small>הרחבות 1.272 / 1.618</small></dd>
+        <dt>סיכוי/סיכון</dt><dd><span class="num">${a.rr==null?'–':a.rr.toFixed(1)}</span> <small>ליעד 1 · סיכון <span class="num">${risk.toFixed(1)}%</span>${inz?'':' · מחושב מהלימיט הראשון'}</small></dd>
+        <div class="sep"></div>
+        <dt>נגיעות באזור</dt><dd><span class="num">${a.tc}</span> <small>${a.tc<=1?'אזור טרי':a.tc>=4?'האזור כבר נבדק הרבה':''}</small></dd>
+        ${oth}${outer}
+      </dl>
+      <div class="links"><a href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(r.s.replace('.','-'))}" target="_blank" rel="noopener">גרף נרות ב-TradingView</a></div>
+    </div></div>`;
+}
+
+/* price line with the zones. one y-scale, levels labelled at the right edge */
+function drawChart(box,r){
+  const a=r[st.tf], Z=lv(a), ser=st.tf==='d'?r.cd:r.cw, cal=(SCAN.cal||{})[st.tf]||[];
+  const stop=stopOf(a), W=Math.max(300,box.clientWidth), H=box.clientWidth<520?240:290, m={l:8,r:104,t:14,b:22};
+  const dates=cal.slice(-ser.length); const n=ser.length;
+  let lo=Math.min(Math.min.apply(null,ser),stop), hi=Math.max(Math.max.apply(null,ser),Z.t1); const pad=(hi-lo)*0.06; lo-=pad; hi+=pad;
+  const x=i=>m.l+(n<2?0:i/(n-1))*(W-m.l-m.r), y=v=>m.t+(hi-v)/(hi-lo)*(H-m.t-m.b);
+  const path=ser.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join('');
+  const band=(top,bot,fill)=>`<rect x="${m.l}" y="${y(top).toFixed(1)}" width="${W-m.l-m.r}" height="${Math.max(1,y(bot)-y(top)).toFixed(1)}" fill="var(${fill})"/>`;
+  const hline=(v,c,dash)=>`<line x1="${m.l}" x2="${W-m.r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="var(${c})" stroke-width="1" ${dash?'stroke-dasharray="4 3"':''}/>`;
+  // right-edge labels, pushed apart so they never overlap
+  const labs=[{v:Z.t1,t:'יעד 1',c:'--up'},{v:Z.inst,t:'מוסדי',c:'--blue'},{v:Z.smzTop,t:'SMZ',c:'--smz'},{v:stop,t:'סטופ',c:'--down'},{v:r.p,t:'מחיר',c:'--text',b:1}]
+    .map(o=>Object.assign(o,{y:y(o.v)})).sort((p,q)=>p.y-q.y);
+  for(let i=1;i<labs.length;i++) if(labs[i].y-labs[i-1].y<13) labs[i].y=labs[i-1].y+13;
+  for(let i=labs.length-2;i>=0;i--){ if(labs[i+1].y>H-m.b){ labs[i+1].y=H-m.b; } if(labs[i+1].y-labs[i].y<13) labs[i].y=labs[i+1].y-13; }
+  const labSVG=labs.map(o=>`<text x="${W-m.r+7}" y="${(o.y+4).toFixed(1)}" font-size="11.5" fill="var(--muted)"><tspan fill="var(${o.c})" font-weight="${o.b?700:600}">${fmt(o.v)}</tspan> ${o.t}</text>`).join('');
+  // leg anchors, when they fall inside the window
+  const idxOf=d=>{ if(!dates.length||d<dates[0]) return -1; let k=-1; for(let i=0;i<dates.length;i++){ if(dates[i]<=d) k=i; else break; } return k; };
+  const mark=(d,v,up)=>{ const i=idxOf(d); if(i<0) return ''; const cx=x(i), cy=y(Math.max(lo,Math.min(hi,ser[i]))); return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="var(--bg2)" stroke="var(--text)" stroke-width="1.5"/><text x="${cx.toFixed(1)}" y="${(cy+(up?-9:17)).toFixed(1)}" text-anchor="middle" font-size="11" fill="var(--muted)">${up?'שיא':'שפל'}</text>`; };
+  const ticks=[]; if(dates.length){ const step=Math.max(1,Math.round(n/5)); for(let i=Math.floor(step/2);i<n;i+=step){ const d=dates[i]; ticks.push(`<text x="${x(i).toFixed(1)}" y="${H-5}" text-anchor="middle" font-size="11" fill="var(--muted)">${d.slice(5,7)}/${d.slice(2,4)}</text>`); } }
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="height:${H}px" role="img" aria-label="גרף מחיר של ${esc(r.s)} עם אזורי הכניסה">
+    ${band(Z.inst,Z.smzTop,'--inst-bg')}${band(Z.smzTop,Z.smzBot,'--smz-bg')}
+    ${hline(Z.t1,'--up',1)}${hline(stop,'--down',1)}
+    <line x1="${m.l}" x2="${W-m.r}" y1="${H-m.b}" y2="${H-m.b}" stroke="var(--line2)" stroke-width="1"/>
+    <path d="${path}" fill="none" stroke="var(--text)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${mark(a.lt,a.lo,false)}${mark(a.ht,a.hi,true)}
+    <circle cx="${x(n-1).toFixed(1)}" cy="${y(ser[n-1]).toFixed(1)}" r="4" fill="var(--text)" stroke="var(--bg2)" stroke-width="2"/>
+    ${labSVG}${ticks.join('')}
+    <line class="xh" x1="0" x2="0" y1="${m.t}" y2="${H-m.b}" stroke="var(--dim)" stroke-width="1" visibility="hidden"/>
+    <circle class="xd" r="4" fill="var(--blue)" stroke="var(--bg2)" stroke-width="2" visibility="hidden"/>
+  </svg><div class="tip num" hidden></div>`;
+  const svg=box.querySelector('svg'), xh=box.querySelector('.xh'), xd=box.querySelector('.xd'), tip=box.querySelector('.tip');
+  const move=ev=>{ const rc=svg.getBoundingClientRect(); const px=(ev.clientX-rc.left)*W/rc.width; let i=Math.round((px-m.l)/(W-m.l-m.r)*(n-1)); i=Math.max(0,Math.min(n-1,i));
+    const cx=x(i), cy=y(ser[i]); xh.setAttribute('x1',cx); xh.setAttribute('x2',cx); xh.setAttribute('visibility','visible'); xd.setAttribute('cx',cx); xd.setAttribute('cy',cy); xd.setAttribute('visibility','visible');
+    tip.hidden=false; tip.textContent=(dates[i]?heDate(dates[i])+' · ':'')+fmt(ser[i]); tip.style.left=Math.max(60,Math.min(rc.width-60,cx*rc.width/W))+'px'; tip.style.top=(cy*rc.height/H)+'px'; };
+  const leave=()=>{ xh.setAttribute('visibility','hidden'); xd.setAttribute('visibility','hidden'); tip.hidden=true; };
+  svg.addEventListener('pointermove',move); svg.addEventListener('pointerdown',move); svg.addEventListener('pointerleave',leave);
+}
+
+function header(){
+  const u=SCAN.universe||{};
+  $('#sub').innerHTML=`נכון לסגירת המסחר ב-${heDate(SCAN.asOf)} · <span class="num">${u.total||SCAN.rows.length}</span> מניות: S&amp;P 500, נאסד"ק 100 ורשימת מעקב`;
+  const short=SCAN.rows.filter(r=>r.short).map(r=>r.s);
+  const none=SCAN.rows.filter(r=>!r.short&&!r.d&&!r.w).length;
+  $('#foot').innerHTML=`האיתותים מחושבים מכנית מכללי Smart Money Zones של פיטר דיקרלו ואינם ייעוץ השקעות. בחירת הרגל אוטומטית ועשויה להיות שונה מזו שדיקרלו מסמן ידנית, ולכן כדאי לאמת בגרף לפני פעולה. מקור המחירים: ${esc(SCAN.source||'Yahoo Finance')}, מחירי סגירה.`
+    +(none?` ב-<span class="num">${none}</span> מניות אין כרגע רגל עולה תקפה והן אינן מוצגות.`:'')
+    +(short.length?` חסרה היסטוריה מספקת עבור <span class="num">${short.map(esc).join(', ')}</span>.`:'')
+    +((SCAN.failed||[]).length?` לא נטענו: <span class="num">${SCAN.failed.map(esc).join(', ')}</span>.`:'');
+}
+function start(data){
+  SCAN=data; header(); render();
+  $('#chips').addEventListener('click',e=>{ const b=e.target.closest('.chip'); if(!b) return; const g=b.dataset.g; st.grades=st.grades.includes(g)?st.grades.filter(x=>x!==g):st.grades.concat(g); LS.set('smzscan.g',st.grades); render(); });
+  document.addEventListener('click',e=>{ const t=e.target.closest('[data-tf]'); if(t){ st.tf=t.dataset.tf; LS.set('smzscan.tf',st.tf); render(); return; }
+    const i=e.target.closest('[data-ix]'); if(i){ st.ix=i.dataset.ix; LS.set('smzscan.ix',st.ix); render(); return; }
+    const r=e.target.closest('.row'); if(r){ st.open=st.open===r.dataset.s?null:r.dataset.s; render(); } });
+  $('#q').addEventListener('input',e=>{ st.q=e.target.value; render(); });
+  $('#sort').addEventListener('change',e=>{ st.sort=e.target.value; render(); });
+  $('#both').addEventListener('change',e=>{ st.both=e.target.checked; render(); });
+  let rt; window.addEventListener('resize',()=>{ clearTimeout(rt); rt=setTimeout(()=>{ if(st.open) render(); },150); });
+}
+if(window.__SCAN__) start(window.__SCAN__);
+else fetch('data/scan.json',{cache:'no-store'}).then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); }).then(start)
+  .catch(()=>{ $('#sub').textContent='לא הצלחתי לטעון את data/scan.json. הקובץ נוצר בהרצה הראשונה של הסריקה.'; });
+})();
+</script>
+</body>
+</html>
