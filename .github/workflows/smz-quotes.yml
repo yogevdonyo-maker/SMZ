@@ -1,39 +1,27 @@
 name: SMZ live prices
 
+# One run stays alive through the US trading day and publishes quotes.json to the `live` branch every minute.
+# The schedule only makes sure a run is alive: a run that finds fresh prices already being published exits at once,
+# and a run that starts before the open waits for it. GitHub may start scheduled runs a few minutes late.
 on:
   schedule:
-    # every 5 minutes around US market hours, Monday–Friday (13:30–21:00 UTC covers both summer and winter time).
-    # the script itself exits when the market is closed. GitHub may start scheduled runs a few minutes late.
-    - cron: '*/5 13-21 * * 1-5'
+    - cron: '7,22,37,52 13-20 * * 1-5'
   workflow_dispatch:
 
 permissions:
   contents: write
 
-concurrency:
-  group: smz-quotes
-  cancel-in-progress: true
-
 jobs:
   quotes:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Fetch prices
-        run: |
-          mkdir -p out
-          node scanner/quotes.js --out out/quotes.json ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
-      - name: Publish on the live branch
-        run: |
-          if [ ! -f out/quotes.json ]; then echo "nothing to publish"; exit 0; fi
-          cd out
-          git init -q -b live
-          git config user.name "smz-quotes"
-          git config user.email "actions@users.noreply.github.com"
-          git add quotes.json
-          git commit -q -m "quotes"
-          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" live
+      - name: Publish prices every minute
+        env:
+          GH_REMOTE: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scanner/quotes.js --loop --dir "$RUNNER_TEMP/live" ${{ github.event_name == 'workflow_dispatch' && '--force' || '' }}
