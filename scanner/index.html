@@ -66,7 +66,7 @@ button{ cursor:pointer; }
 
 /* list */
 .list{ border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
-.row, .lhead{ display:grid; grid-template-columns:minmax(150px,1.5fr) 92px 150px minmax(150px,1.4fr) 128px 76px 76px 52px 112px 44px; gap:10px; align-items:center; padding:9px 12px; }
+.row, .lhead{ display:grid; grid-template-columns:minmax(140px,1.4fr) 88px 150px minmax(120px,1.1fr) 124px 72px 72px 50px 158px 36px; gap:10px; align-items:center; padding:9px 12px; }
 .lhead{ background:var(--bg2); color:var(--muted); font-size:12px; border-bottom:1px solid var(--line); }
 .row{ width:100%; border:0; border-bottom:1px solid var(--line); background:var(--bg); text-align:start; }
 .row:hover{ background:var(--bg2); }
@@ -82,8 +82,8 @@ button{ cursor:pointer; }
 .badge{ display:inline-flex; align-items:center; gap:6px; padding:3px 9px; border-radius:12px; font-size:12.5px; font-weight:500; white-space:nowrap; }
 .badge i{ font-style:normal; font-weight:700; }
 .g-A{ background:var(--up-bg); color:var(--up); } .g-B{ background:var(--blue-bg); color:var(--blue); } .g-C{ background:var(--amber-bg); color:var(--amber); }
-.g-D{ background:var(--down-bg); color:var(--down); } .g-E,.g-N{ background:var(--panel); color:var(--muted); }
-.d-A{ background:var(--up); } .d-B{ background:var(--blue); } .d-C{ background:var(--amber); } .d-D{ background:var(--down); } .d-E,.d-N{ background:var(--dim); }
+.g-D,.g-E,.g-N{ background:var(--panel); color:var(--muted); }
+.d-A{ background:var(--up); } .d-B{ background:var(--blue); } .d-C{ background:var(--amber); } .d-D,.d-E,.d-N{ background:var(--dim); }
 /* position bar: leg low at the left, leg high at the right, zones fixed, the dot is the last close */
 .pos{ position:relative; height:14px; direction:ltr; }
 .pos::before{ content:""; position:absolute; inset:6px 0 6px 0; background:var(--line2); border-radius:1px; }
@@ -93,6 +93,9 @@ button{ cursor:pointer; }
 .pos .pt{ position:absolute; top:2px; width:10px; height:10px; margin-left:-5px; border-radius:50%; background:var(--text); box-shadow:0 0 0 2px var(--bg); }
 .row[aria-expanded="true"] .pos .pt{ box-shadow:0 0 0 2px var(--panel); }
 .bx{ display:flex; align-items:center; gap:6px; font-size:12.5px; white-space:nowrap; }
+.bx .os{ color:var(--smz); font-weight:500; }
+.miss{ margin:6px 0 0; padding:0; list-style:none; font-weight:400; font-size:13px; }
+.miss li::before{ content:"· "; }
 .bx .sq{ width:9px; height:9px; border-radius:2px; flex:0 0 auto; }
 .score{ font-weight:600; text-align:end; }
 .k{ display:none; color:var(--muted); font-size:11.5px; }
@@ -112,6 +115,7 @@ button{ cursor:pointer; }
 .plan dd small{ color:var(--muted); }
 .plan .sep{ grid-column:1 / -1; height:1px; background:var(--line); margin:3px 0; }
 .act{ margin:0 0 10px; padding:8px 10px; border-radius:var(--radius); font-size:13.5px; font-weight:500; }
+.act.g-B{ color:var(--text); }
 .links{ margin-top:12px; display:flex; flex-wrap:wrap; gap:12px; font-size:13px; }
 .links a{ color:var(--blue); }
 
@@ -184,7 +188,7 @@ details.how li{ margin-bottom:5px; }
 
   <div class="list" id="list">
     <div class="lhead">
-      <span>מניה</span><span>מחיר</span><span>מצב</span><span>מיקום ברגל (שפל ← שיא)</span><span>אזור כניסה</span><span>סטופ</span><span>יעד 1</span><span>סיכוי/סיכון</span><span>BX Trender</span><span style="text-align:end">ציון</span>
+      <span>מניה</span><span>מחיר</span><span>מצב</span><span>מיקום בטווח (שפל ← שיא)</span><span>אזור קנייה (SMZ)</span><span>סטופ</span><span>יעד 1</span><span>סיכוי/סיכון</span><span>אישור</span><span style="text-align:end">ציון</span>
     </div>
     <div id="rows"></div>
   </div>
@@ -192,12 +196,14 @@ details.how li{ margin-bottom:5px; }
   <details class="how" id="how">
     <summary>איך הסורק מחליט</summary>
     <ol>
-      <li><b>הרגל.</b> בכל מסגרת זמן הסורק מאתר את המהלך העולה האחרון ששבר מבנה (BOS): משפל סווינג ועד השיא הגבוה ביותר שנקבע אחריו. רגל נפסלת ברגע שהמחיר יורד מתחת לשפל שלה.</li>
-      <li><b>האזורים.</b> תיקון של 61.8%–78.6% מהשיא הוא אזור הקנייה המוסדי, ותיקון של 78.6%–82.6% הוא ה-Smart Money Zone, אזור הכניסה המועדף.</li>
-      <li><b>אישור.</b> כניסה מסומנת כמאושרת רק כשהמחיר סגר בתוך האזור וה-BX Trender הקצר הפסיק לרדת: שפל עולה בזמן שהוא עדיין אדום, או מעבר מאדום לירוק בשלושת הנרות האחרונים.</li>
-      <li><b>סטופ.</b> הסטופ הצמוד יושב מתחת ל-SMZ (אחוז אחד או חצי ATR, הגדול מביניהם) ומופעל בסגירה מתחתיו. הסטופ המבני יושב מתחת לשפל הרגל.</li>
-      <li><b>יציאה.</b> יעד 1 הוא שיא הרגל. יעד 2 ויעד 3 הם הרחבות 1.272 ו-1.618. לפי השיטה מממשים חלק ביעד 1 ומחזיקים את היתרה עד יעד 2 או עד שה-BX חוזר לאדום.</li>
-      <li><b>ציון.</b> 0–100: עומק באזור, סוג האישור, יחס סיכוי/סיכון, מספר הפעמים שהאזור כבר נבדק, והסכמה של מסגרת הזמן השנייה.</li>
+      <li><b>הטווח.</b> המהלך העולה האחרון ששבר מבנה: משפל סווינג ועד השיא שנקבע אחריו. בשבועי זה טווח המחזור כולו, עד השיא הגבוה ביותר. הטווח נשאר תקף עד שהמחיר סוגר מתחת לשפל פעמיים ברצף. פתיל או סגירה בודדת מתחת לשפל אינם שוברים אותו.</li>
+      <li><b>האזורים.</b> תיקון של 78.6%–82.6% מהשיא הוא ה-Smart Money Zone, אזור הקנייה. תיקון של 61.8%–78.6% הוא האזור המוסדי: מקום לצבירה ראשונית, מוקדם מדי לעסקה. מתחת ל-SMZ ועד השפל זה דיסקאונט עמוק, שעדיין נחשב קנייה כל עוד השפל מחזיק.</li>
+      <li><b>המגמה הגדולה.</b> אזור קנייה ביומי נחשב רק כשהמבנה השבועי עדיין עולה.</li>
+      <li><b>אישור.</b> BX Trender שהפסיק לרדת (שפל עולה או מעבר לירוק), או Stochastic RSI שבועי במכירת יתר (מתחת ל-20).</li>
+      <li><b>סטופ.</b> מתחת לשפל הטווח, בסגירה ולא בפתיל. הרמה המוצגת נמוכה ב-2% מהשפל. הסטופ הצמוד, מתחת ל-SMZ, הוא החלופה האגרסיבית.</li>
+      <li><b>יעד ויחס.</b> יעד 1 הוא שיא הטווח, יעד 2 ו-3 הם הרחבות 1.272 ו-1.618. כניסה מאושרת דורשת לפחות 3 דולר סיכוי על כל דולר סיכון עד הסטופ המבני.</li>
+      <li><b>נפח.</b> מדף הנפח הכבד הראשון מתחת למחיר מוצג כתמיכה וככניסה שמרנית. כשהנפח דליל ממש מתחת למחיר, זה "מסלול מהיר" שבו המחיר יכול לרדת מהר.</li>
+      <li><b>ציון.</b> 0–100: מיקום באזור, סוג האישור, יחס סיכוי/סיכון, המבנה השבועי, מסגרת הזמן השנייה, תוצאת הביקור הקודם באזור והנפח.</li>
     </ol>
   </details>
 
@@ -223,13 +229,15 @@ details.how li{ margin-bottom:5px; }
 const $=s=>document.querySelector(s);
 const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
 const G={
-  A:{t:'כניסה מאושרת',h:'באזור, עם אישור BX',act:'המחיר באזור הכניסה וה-BX Trender הפסיק לרדת. לפי השיטה זו נקודת הכניסה.'},
-  B:{t:'באזור · ממתינה לאישור',h:'באזור, BX עדיין יורד',act:'המחיר באזור הכניסה אבל ה-BX Trender עדיין יורד. לפי השיטה ממתינים לשפל עולה ב-BX לפני כניסה.'},
-  C:{t:'מתקרבת לאזור',h:'עד 1.5 ATR מעל האזור',act:'המחיר קרוב לאזור המוסדי ועדיין לא נכנס אליו. אפשר להציב התראה בגבול העליון של האזור.'},
-  D:{t:'מתחת ל-SMZ',h:'סגרה מתחת לאזור',act:'המחיר סגר מתחת ל-Smart Money Zone, כך שהסטופ הצמוד כבר נפגע. הרגל תקפה רק כל עוד השפל שלה מחזיק.'},
+  A:{t:'כניסה מאושרת',h:'באזור הקנייה, עם אישור, יחס 3 ומעלה ומבנה שבועי עולה',act:'המחיר באזור הקנייה, יש אישור, היחס 3 ומעלה והמבנה השבועי עולה. לפי השיטה זו נקודת הכניסה.'},
+  B:{t:'באזור הקנייה · חסר תנאי',h:'באזור הקנייה, תנאי אחד או יותר עדיין חסר',act:'המחיר באזור הקנייה, אבל עדיין חסר:'},
+  C:{t:'אזור צבירה מוסדי',h:'בין 61.8% ל-78.6%, מעל ה-SMZ',act:'המחיר באזור המוסדי, מעל ה-Smart Money Zone. לפי השיטה זה מקום לצבירה ראשונית בהשקעה ארוכה. לעסקה ממתינים ל-SMZ, שם היחס מגיע ל-3.'},
+  D:{t:'מתקרבת לאזור',h:'עד 1.5 ATR מעל האזור המוסדי',act:'המחיר קרוב לאזור המוסדי ועדיין לא נכנס אליו. אפשר להציב התראה בגבול העליון של האזור.'},
   E:{t:'יצאה מהאזור',h:'נגעה באזור וחזרה מעליו',act:'המחיר נגע באזור לאחרונה וכבר עלה מעליו. כניסה חדשה רק בחזרה לאזור.'},
-  N:{t:'מעל האזור',h:'רחוקה מהאזור',act:'המחיר רחוק מעל אזור הכניסה. ממתינים לתיקון.'}
+  N:{t:'מעל האזור',h:'רחוקה מהאזור',act:'המחיר רחוק מעל האזורים. ממתינים לתיקון.'}
 };
+const WHY={conf:'אישור: BX Trender עדיין יורד וה-Stochastic RSI השבועי לא במכירת יתר',rr:'יחס סיכוי/סיכון נמוך מ-3',htf:'המבנה השבועי אינו עולה',under:'המחיר סגר פעם אחת מתחת לשפל הטווח. סגירה נוספת שוברת את המבנה'};
+const ST={smz:'ב-Smart Money Zone',deep:'דיסקאונט עמוק, מתחת ל-SMZ',under:'מתחת לשפל הטווח',inst:'באזור המוסדי',near:'קרוב לאזור',bounce:'יצא מהאזור',premium:'מעל האזורים'};
 const ORDER=['A','B','C','D','E','N'];
 const TRIG={flip:'התהפך לירוק',hl:'שפל עולה',up:'ירוק ועולה',none:'יורד'};
 const st={tf:LS.get('smzscan.tf','d'),ix:LS.get('smzscan.ix','all'),grades:LS.get('smzscan.g',['A','B']),sort:'sc',q:'',both:false,open:null};
@@ -245,7 +253,7 @@ const clock=t=>new Date(t*1000).toLocaleTimeString('he-IL',{hour:'2-digit',minut
 function liveOf(r){ const q=LIVE.q[r.s]; return q&&q.p!=null&&q.t&&nyDay(q.t)>SCAN.asOf?q:null; }
 function cur(r){ const q=liveOf(r); return q?{p:q.p,ch:(q.p/r.p-1)*100,q}:{p:r.p,ch:r.ch,q:null}; }
 function region(a,p){ const Z=lv(a); return p<a.lo?'broken':p<Z.smzBot?'deep':p<=Z.smzTop?'smz':p<=Z.inst?'inst':'above'; }
-const NOW={inst:['עכשיו באזור המוסדי','z'],smz:['עכשיו ב-SMZ','z'],deep:['עכשיו מתחת ל-SMZ','b'],broken:['עכשיו מתחת לשפל הרגל','b'],above:['עכשיו מעל האזור','a']};
+const NOW={inst:['עכשיו באזור המוסדי','a'],smz:['עכשיו ב-SMZ','z'],deep:['עכשיו בדיסקאונט עמוק','z'],broken:['עכשיו מתחת לשפל הטווח','b'],above:['עכשיו מעל האזורים','a']};
 // the tag appears only when the live price sits in a different place than the last close did
 function nowTag(r,a){ const q=liveOf(r); if(!q) return ''; const was=region(a,r.p), is=region(a,q.p); if(was===is) return ''; return `<span class="nowtag ${NOW[is][1]}">${NOW[is][0]}</span>`; }
 function priceHTML(r){ const c=cur(r); return `<b>${c.q?'<i class="lv"></i>':''}${fmt(c.p)}</b><small class="${c.ch>=0?'upc':'dnc'}">${pct(c.ch,2)}</small>`; }
@@ -253,7 +261,7 @@ const posPct=(a,p)=>Math.max(0,Math.min(100,(p-a.lo)/(a.hi-a.lo)*100));
 function liveLine(r,a){
   const q=liveOf(r); if(!q) return '<small>אין כרגע מחיר חדש מהסגירה האחרונה</small>';
   const Z=lv(a); let extra='';
-  if(q.p>=Z.smzBot&&q.p<=Z.inst){ const risk=q.p-a.sl; if(risk>0) extra=` · <small>סיכוי/סיכון מכאן <span class="num">${((Z.t1-q.p)/risk).toFixed(1)}</span></small>`; }
+  if(q.p>a.ss&&q.p<=Z.inst){ extra=` · <small>סיכוי/סיכון מכאן <span class="num">${((Z.t1-q.p)/(q.p-a.ss)).toFixed(1)}</span></small>`; }
   const range=q.lo!=null&&q.hi!=null?` · <small>טווח יומי <span class="num">${fmt(q.lo)}–${fmt(q.hi)}</span></small>`:'';
   return `<span class="num">${fmt(q.p)}</span> <small><span class="num">${pct((q.p/r.p-1)*100,2)}</span> מהסגירה · ${clock(q.t)}${q.ws?' · זרם רציף':''}</small>${range}${extra}`;
 }
@@ -264,8 +272,9 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 const heDate=d=>{ if(!d) return ''; const [y,m,dd]=d.split('-'); return `${+dd}.${+m}.${y}`; };
 const gOf=a=>a?(a.g==='-'?'N':a.g):null;
 function lv(a){ const c=SCAN.cfg, R=a.hi-a.lo, r=x=>a.hi-R*x; return {inst:r(c.inst),smzTop:r(c.smzTop),smzBot:r(c.smzBot),e1:r(c.entry1),e2:r(c.entry2),t1:a.hi,t2:a.lo+R*c.ext1,t3:a.lo+R*c.ext2}; }
-const inZone=a=>a&&(a.st==='inst'||a.st==='smz');
-const stopOf=a=>a.st==='deep'?a.ss:a.sl;
+const inZone=a=>a&&(a.st==='smz'||a.st==='deep');
+const stopOf=a=>a.ss;
+const soTxt=v=>v==null?'':v<SCAN.cfg.extreme?'מכירת יתר קיצונית':v<SCAN.cfg.oversold?'מכירת יתר':'';
 
 function visible(){
   const q=st.q.trim().toUpperCase();
@@ -299,53 +308,63 @@ function rowHTML(r){
   const p=posPct(a,cur(r).p);
   const idx=r.i.includes('x')?'<span class="tag">מעקב</span>':'';
   const isNew=a.was&&a.since===SCAN.asOf?'<span class="tag">חדש</span>':'';
-  const bx=a.bx?`<i class="sq" style="background:var(${a.bx[0]>0?'--up':'--down'})"></i>${TRIG[a.bx[2]]}`:'–';
+  const bx=(a.bx?`<i class="sq" style="background:var(${a.bx[0]>0?'--up':'--down'})"></i>${TRIG[a.bx[2]]}`:'–')+(soTxt(r.so)?` <span class="os">· מכירת יתר</span>`:'');
   return `<div class="item"><button type="button" class="row" data-s="${r.s}" aria-expanded="${open}">
     <span class="sym"><b class="num">${esc(r.s)}</b>${idx}${isNew}<small>${esc(r.n)}</small></span>
     <span class="price num">${priceHTML(r)}</span>
     <span class="st"><span><span class="badge g-${g}">${G[g].t}</span><span class="nowslot">${nowTag(r,a)}</span></span></span>
     <span class="posw"><span class="pos" style="display:block"><i class="zs"></i><i class="zi"></i><i class="pt" style="left:${p.toFixed(1)}%"></i></span></span>
     <span class="nums">
-      <span><span class="k">אזור</span><span class="num">${fmt(Z.smzBot)}–${fmt(Z.inst)}</span></span>
+      <span><span class="k">SMZ</span><span class="num">${fmt(Z.smzBot)}–${fmt(Z.smzTop)}</span></span>
       <span><span class="k">סטופ</span><span class="num">${fmt(stopOf(a))}</span></span>
       <span><span class="k">יעד</span><span class="num">${fmt(Z.t1)}</span></span>
       <span><span class="k">סיכוי/סיכון</span><span class="num">${a.rr==null?'–':a.rr.toFixed(1)}</span></span>
-      <span class="bx"><span class="k">BX</span>${bx}</span>
+      <span class="bx"><span class="k">אישור</span>${bx}</span>
       <span class="score num"><span class="k">ציון </span>${a.sc}</span>
     </span>
   </button>${open?detailHTML(r):''}</div>`;
 }
 function detailHTML(r){
   const a=r[st.tf], g=gOf(a), Z=lv(a), other=st.tf==='d'?r.w:r.d, otherName=st.tf==='d'?'שבועי':'יומי';
-  const en=a.en, stop=stopOf(a), risk=(en-stop)/en*100, up=(Z.t1-en)/en*100;
-  const inz=inZone(a)||a.st==='deep';
+  const en=a.en, risk=(en-a.ss)/en*100, up=(Z.t1-en)/en*100;
+  const inr=['inst','smz','deep','under'].includes(a.st);
   const bxTxt=a.bx?`${TRIG[a.bx[2]]} <small class="num">(${a.bx[0]>0?'+':''}${a.bx[0]})</small>`:'–';
-  const outer=a.ol!=null?(()=>{ const O=lv({lo:a.ol,hi:a.oh}); return `<dt>האזור הבא למטה</dt><dd><span class="num">${fmt(O.smzBot)}–${fmt(O.inst)}</span> <small>רגל מ-<span class="num">${fmt(a.ol)}</span></small></dd>`; })():'';
-  const oth=other?`<dt>${otherName}</dt><dd>${G[gOf(other)].t} <small>אזור <span class="num">${fmt(lv(other).smzBot)}–${fmt(lv(other).inst)}</span></small></dd>`:`<dt>${otherName}</dt><dd><small>אין רגל עולה תקפה</small></dd>`;
+  const so=r.so==null?'–':`<span class="num">${r.so.toFixed(0)}</span> <small>${soTxt(r.so)||'לא במכירת יתר'}</small>`;
+  const miss=g==='B'&&a.why&&a.why.length?`<ul class="miss">${a.why.map(w=>`<li>${WHY[w]}</li>`).join('')}</ul>`:'';
+  const htf=st.tf==='d'?`<dt>מבנה שבועי</dt><dd>${r.hf?'עולה':'<span class="dnc">אינו עולה</span>'}</dd>`:'';
+  const outer=a.ol!=null?(()=>{ const O=lv({lo:a.ol,hi:a.oh}); return `<dt>טווח חיצוני</dt><dd>SMZ <span class="num">${fmt(O.smzBot)}–${fmt(O.smzTop)}</span> <small>טווח מ-<span class="num">${fmt(a.ol)}</span></small></dd>`; })():'';
+  const oth=other?`<dt>${otherName}</dt><dd>${G[gOf(other)].t} <small>SMZ <span class="num">${fmt(lv(other).smzBot)}–${fmt(lv(other).smzTop)}</span></small></dd>`:`<dt>${otherName}</dt><dd><small>אין טווח עולה תקף</small></dd>`;
   const since=a.since&&a.since!==SCAN.asOf?` <small>במצב הזה מאז ${heDate(a.since)}</small>`:'';
+  const vp=r.vp||{};
+  const vol=(vp.sh!=null?`<dt>מדף נפח</dt><dd><span class="num">${fmt(vp.sh)}</span> <small>הנפח הכבד הראשון מתחת למחיר · כניסה שמרנית</small></dd>`:'')
+    +(vp.ln!=null?`<dt>מסלול מהיר</dt><dd><small>נפח דליל מתחת למחיר, עד</small> <span class="num">${fmt(vp.ln)}</span></dd>`:'');
+  const pb=a.pb?`<dt>ביקור קודם ב-SMZ</dt><dd>${heDate(a.pb[0])} <small>ואחריו עלייה של</small> <span class="num">${a.pb[1]}%</span></dd>`:'';
   return `<div class="detail" id="d-${r.s}">
     <div class="chartbox"><h3><span class="num">${esc(r.s)}</span> · ${st.tf==='d'?'סגירות יומיות':'סגירות שבועיות'}</h3>
       <div class="chart"></div>
-      <div class="key"><span style="--c:var(--inst-bg)">אזור קנייה מוסדי</span><span style="--c:var(--smz-bg)">Smart Money Zone</span><span style="--c:var(--up)">יעד 1</span><span style="--c:var(--down)">סטופ</span></div>
+      <div class="key"><span style="--c:var(--inst-bg)">אזור מוסדי</span><span style="--c:var(--smz-bg)">Smart Money Zone</span><span style="--c:var(--up)">יעד 1</span><span style="--c:var(--down)">סטופ מבני</span></div>
     </div>
     <div class="plan"><h3>תוכנית לפי השיטה</h3>
-      <p class="act g-${g}">${G[g].act}${since}</p>
+      <div class="act g-${g}">${G[g].act}${since}${miss}</div>
       <dl>
         <dt>מחיר עכשיו</dt><dd class="lvline">${liveLine(r,a)}</dd>
-        <dt>רגל</dt><dd><span class="num">${fmt(a.lo)}</span> <small>(${heDate(a.lt)})</small> ← <span class="num">${fmt(a.hi)}</span> <small>(${heDate(a.ht)})</small></dd>
-        <dt>אזור מוסדי</dt><dd><span class="num">${fmt(Z.smzTop)}–${fmt(Z.inst)}</span></dd>
-        <dt>Smart Money Zone</dt><dd><span class="num">${fmt(Z.smzBot)}–${fmt(Z.smzTop)}</span></dd>
-        <dt>כניסה</dt><dd>${inz?`<span class="num">${fmt(en)}</span> <small>הסגירה האחרונה, בתוך האזור</small>`:`<span class="num">${fmt(Z.e1)}</span> <small>לימיט באזור המוסדי</small> · <span class="num">${fmt(Z.e2)}</span> <small>לימיט ב-SMZ</small>`}</dd>
+        <dt>מיקום</dt><dd>${ST[a.st]} <small>תיקון של <span class="num">${(a.pos*100).toFixed(0)}%</span> מהשיא</small></dd>
+        <dt>טווח</dt><dd><span class="num">${fmt(a.lo)}</span> <small>(${heDate(a.lt)})</small> ← <span class="num">${fmt(a.hi)}</span> <small>(${heDate(a.ht)})</small>${a.fl!=null?` <small>· פתיל עד <span class="num">${fmt(a.fl)}</span></small>`:''}</dd>
+        <dt>Smart Money Zone</dt><dd><span class="num">${fmt(Z.smzBot)}–${fmt(Z.smzTop)}</span> <small>אזור הקנייה</small></dd>
+        <dt>אזור מוסדי</dt><dd><span class="num">${fmt(Z.smzTop)}–${fmt(Z.inst)}</span> <small>צבירה ראשונית</small></dd>
+        <dt>כניסה</dt><dd>${inr?`<span class="num">${fmt(en)}</span> <small>הסגירה האחרונה</small>`:`<span class="num">${fmt(Z.e2)}</span> <small>לימיט באמצע ה-SMZ</small>`}</dd>
+        <div class="sep"></div>
         <dt>BX Trender</dt><dd>${bxTxt}</dd>
+        <dt>Stoch RSI שבועי</dt><dd>${so}</dd>
+        ${htf}
         <div class="sep"></div>
-        <dt>סטופ צמוד</dt><dd><span class="num">${fmt(a.sl)}</span> <small>סגירה מתחת ל-SMZ</small></dd>
-        <dt>סטופ מבני</dt><dd><span class="num">${fmt(a.ss)}</span> <small>מתחת לשפל הרגל</small></dd>
-        <dt>יעד 1</dt><dd><span class="num">${fmt(Z.t1)}</span> <small>שיא הרגל · <span class="num">${pct(up,0)}</span></small></dd>
+        <dt>סטופ מבני</dt><dd><span class="num">${fmt(a.ss)}</span> <small>סגירה מתחת לשפל הטווח</small></dd>
+        ${a.sl!=null?`<dt>סטופ צמוד</dt><dd><span class="num">${fmt(a.sl)}</span> <small>סגירה מתחת ל-SMZ · אגרסיבי</small></dd>`:''}
+        <dt>יעד 1</dt><dd><span class="num">${fmt(Z.t1)}</span> <small>שיא הטווח · <span class="num">${pct(up,0)}</span></small></dd>
         <dt>יעד 2 · יעד 3</dt><dd><span class="num">${fmt(Z.t2)}</span> · <span class="num">${fmt(Z.t3)}</span> <small>הרחבות 1.272 / 1.618</small></dd>
-        <dt>סיכוי/סיכון</dt><dd><span class="num">${a.rr==null?'–':a.rr.toFixed(1)}</span> <small>ליעד 1 · סיכון <span class="num">${risk.toFixed(1)}%</span>${inz?'':' · מחושב מהלימיט הראשון'}</small></dd>
+        <dt>סיכוי/סיכון</dt><dd><span class="num">${a.rr==null?'–':a.rr.toFixed(1)}</span> <small>ליעד 1 מול הסטופ המבני · סיכון <span class="num">${risk.toFixed(0)}%</span>${inr?'':' · מחושב מהלימיט'}</small></dd>
         <div class="sep"></div>
-        <dt>נגיעות באזור</dt><dd><span class="num">${a.tc}</span> <small>${a.tc<=1?'אזור טרי':a.tc>=4?'האזור כבר נבדק הרבה':''}</small></dd>
-        ${oth}${outer}
+        ${vol}${pb}${oth}${outer}
       </dl>
       <div class="links"><a href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(r.s.replace('.','-'))}" target="_blank" rel="noopener">גרף נרות ב-TradingView</a></div>
     </div></div>`;
@@ -363,7 +382,8 @@ function drawChart(box,r){
   const band=(top,bot,fill)=>`<rect x="${m.l}" y="${y(top).toFixed(1)}" width="${W-m.l-m.r}" height="${Math.max(1,y(bot)-y(top)).toFixed(1)}" fill="var(${fill})"/>`;
   const hline=(v,c,dash)=>`<line x1="${m.l}" x2="${W-m.r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="var(${c})" stroke-width="1" ${dash?'stroke-dasharray="4 3"':''}/>`;
   // right-edge labels, pushed apart so they never overlap
-  const labs=[{v:Z.t1,t:'יעד 1',c:'--up'},{v:Z.inst,t:'מוסדי',c:'--blue'},{v:Z.smzTop,t:'SMZ',c:'--smz'},{v:stop,t:'סטופ',c:'--down'},{v:c.p,t:lp!=null?'עכשיו':'מחיר',c:'--text',b:1}]
+  const sh=r.vp&&r.vp.sh!=null&&r.vp.sh>lo&&r.vp.sh<Z.smzBot&&r.vp.sh>stop?r.vp.sh:null;
+  const labs=[{v:Z.t1,t:'יעד 1',c:'--up'},{v:Z.inst,t:'מוסדי',c:'--blue'},{v:Z.smzTop,t:'SMZ',c:'--smz'},{v:stop,t:'סטופ',c:'--down'}].concat(sh!=null?[{v:sh,t:'נפח',c:'--muted'}]:[]).concat([{v:c.p,t:lp!=null?'עכשיו':'מחיר',c:'--text',b:1}])
     .map(o=>Object.assign(o,{y:y(o.v)})).sort((p,q)=>p.y-q.y);
   for(let i=1;i<labs.length;i++) if(labs[i].y-labs[i-1].y<13) labs[i].y=labs[i-1].y+13;
   for(let i=labs.length-2;i>=0;i--){ if(labs[i+1].y>H-m.b){ labs[i+1].y=H-m.b; } if(labs[i+1].y-labs[i].y<13) labs[i].y=labs[i+1].y-13; }
@@ -375,7 +395,7 @@ function drawChart(box,r){
   box.dataset.busy='';
   box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="height:${H}px" role="img" aria-label="גרף מחיר של ${esc(r.s)} עם אזורי הכניסה">
     ${band(Z.inst,Z.smzTop,'--inst-bg')}${band(Z.smzTop,Z.smzBot,'--smz-bg')}
-    ${hline(Z.t1,'--up',1)}${hline(stop,'--down',1)}
+    ${hline(Z.t1,'--up',1)}${hline(stop,'--down',1)}${sh!=null?`<line x1="${m.l}" x2="${W-m.r}" y1="${y(sh).toFixed(1)}" y2="${y(sh).toFixed(1)}" stroke="var(--dim)" stroke-width="1" stroke-dasharray="1 4"/>`:''}
     <line x1="${m.l}" x2="${W-m.r}" y1="${H-m.b}" y2="${H-m.b}" stroke="var(--line2)" stroke-width="1"/>
     <path d="${path}" fill="none" stroke="var(--text)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
     ${mark(a.lt,a.lo,false)}${mark(a.ht,a.hi,true)}
@@ -436,7 +456,7 @@ async function pollQuotes(){
     // never let an older copy (the lagging fallback) overwrite a newer price
     for(const s in j.q){ const v=j.q[s], old=LIVE.q[s]; if(old&&old.t>=v[1]){ if(old.ws&&j.t>=LIVE.t){ old.lo=v[2]; old.hi=v[3]; } continue; } LIVE.q[s]={p:v[0],t:v[1],lo:v[2],hi:v[3]}; }
     // a newer daily scan was published: load it
-    if(j.scanAsOf&&j.scanAsOf>SCAN.asOf&&Date.now()-lastRescan>5*60000){ lastRescan=Date.now(); try{ const r=await fetch('data/scan.json',{cache:'no-store'}); if(r.ok){ const d=await r.json(); if(d.asOf>SCAN.asOf){ SCAN=d; header(); render(); } } }catch(e){} }
+    if(j.scanAsOf&&j.scanAsOf>SCAN.asOf&&Date.now()-lastRescan>5*60000){ lastRescan=Date.now(); try{ const r=await fetch('data/scan.json',{cache:'no-store'}); if(r.ok){ const d=await r.json(); if(d.v===2&&d.asOf>SCAN.asOf){ SCAN=d; header(); render(); } } }catch(e){} }
     refreshLive(null);
   }
   liveStatus(); wsSync();
@@ -477,12 +497,13 @@ function header(){
   $('#sub').innerHTML=`נכון לסגירת המסחר ב-${heDate(SCAN.asOf)} · <span class="num">${u.total||SCAN.rows.length}</span> מניות: S&amp;P 500, נאסד"ק 100 ורשימת מעקב`;
   const short=SCAN.rows.filter(r=>r.short).map(r=>r.s);
   const none=SCAN.rows.filter(r=>!r.short&&!r.d&&!r.w).length;
-  $('#foot').innerHTML=`האיתותים מחושבים מכנית מכללי Smart Money Zones של פיטר דיקרלו ואינם ייעוץ השקעות. בחירת הרגל אוטומטית ועשויה להיות שונה מזו שדיקרלו מסמן ידנית, ולכן כדאי לאמת בגרף לפני פעולה. מקור המחירים: ${esc(SCAN.source||'Yahoo Finance')}, מחירי סגירה.`
-    +(none?` ב-<span class="num">${none}</span> מניות אין כרגע רגל עולה תקפה והן אינן מוצגות.`:'')
+  $('#foot').innerHTML=`האיתותים מחושבים מכנית מכללי Smart Money Zones של פיטר דיקרלו ואינם ייעוץ השקעות. בחירת הטווח אוטומטית ועשויה להיות שונה מזו שדיקרלו מסמן ידנית, ולכן כדאי לאמת בגרף לפני פעולה. הסורק אינו בודק נתונים פונדמנטליים או מועדי דוחות. מקור המחירים: ${esc(SCAN.source||'Yahoo Finance')}, מחירי סגירה.`
+    +(none?` ב-<span class="num">${none}</span> מניות אין כרגע טווח עולה תקף והן אינן מוצגות.`:'')
     +(short.length?` חסרה היסטוריה מספקת עבור <span class="num">${short.map(esc).join(', ')}</span>.`:'')
     +((SCAN.failed||[]).length?` לא נטענו: <span class="num">${SCAN.failed.map(esc).join(', ')}</span>.`:'');
 }
 function start(data){
+  if(!data||data.v!==2){ $('#sub').textContent='הסריקה מתעדכנת לכללים החדשים. כדאי לרענן בעוד כמה דקות.'; setTimeout(()=>location.reload(),90000); return; }
   SCAN=data; header(); render(); liveStart();
   $('#chips').addEventListener('click',e=>{ const b=e.target.closest('.chip'); if(!b) return; const g=b.dataset.g; st.grades=st.grades.includes(g)?st.grades.filter(x=>x!==g):st.grades.concat(g); LS.set('smzscan.g',st.grades); render(); });
   document.addEventListener('click',e=>{ const t=e.target.closest('[data-tf]'); if(t){ st.tf=t.dataset.tf; LS.set('smzscan.tf',st.tf); render(); return; }

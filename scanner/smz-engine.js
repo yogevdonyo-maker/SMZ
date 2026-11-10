@@ -1,14 +1,19 @@
-/* Smart Money Zones – scan engine.
+/* Smart Money Zones – scan engine (v2).
    One file, no dependencies. Runs in Node (the daily scan) and in a browser.
 
-   Method (Peter DiCarlo / THT "Smart Money Zones"):
-     1. Find the last bullish impulse leg: swing low -> swing high that broke structure (BOS).
-     2. Retracement of that leg, measured from the high:
-          0.618 – 0.786  institutional buy zone
-          0.786 – 0.826  Smart Money Zone (optimal entry)
-     3. Entry only inside the zone, confirmed by B-Xtrender momentum turning up.
-     4. Stop: close below the SMZ (tight) or below the leg's low (structural).
-     5. Targets: the leg's high (equal highs), then the 1.272 / 1.618 extensions.
+   Method: Peter DiCarlo's Smart Money Zones, as taught in his course and applied in his published analyses
+   (HOOD, HIMS, ORCL, ALAB, MRVL, BE, NBIS, AAOI – November 2026). test/run-fixture.js checks the engine against them.
+     1. Range: the last bullish leg, swing low -> swing high, that broke structure (BOS).
+        The range stays valid until price CLOSES below the swing low more than once in a row; a wick or a single close does not break it.
+     2. Retracement of the range, measured from the high:
+          0.618 – 0.786  institutional zone: accumulation area, early
+          0.786 – 0.826  Smart Money Zone: the buy zone ("above it, price is outside the zone")
+          below 0.826, above the swing low: deep discount, still a buy while the low holds
+     3. A buy-side zone only counts while the bigger trend is bullish: a daily setup needs a valid weekly range.
+     4. Confirmation: B-Xtrender momentum turning up, or the weekly Stochastic RSI oversold ("rubber band").
+     5. Stop: under the swing low, on a closing basis (structural). The tight alternative sits under the SMZ.
+     6. Target: back to the swing high; then the 1.272 / 1.618 extensions. The setup must offer at least 3:1.
+     7. Volume profile: the heavy shelf below price is the conservative entry; a thin stretch below price is a "fast lane".
 
    bars: [{t: unix seconds, o, h, l, c, v}], oldest first. */
 (function (root, factory) {
@@ -18,13 +23,16 @@
   'use strict';
 
   const CFG = {
-    version: 1,
-    d: { strength: 10, lookback: 520, minLegAtr: 6, minLegPct: 0.12, nearAtr: 1.5, recent: 15, chart: 260 },
-    w: { strength: 6, lookback: 270, minLegAtr: 5, minLegPct: 0.25, nearAtr: 1.5, recent: 8, chart: 200 },
+    version: 2,
+    d: { strength: 10, lookback: 520, minLegAtr: 6, minLegPct: 0.12, nearAtr: 1.5, recent: 15, chart: 260, breakCloses: 2, gap: 5 },
+    w: { strength: 6, lookback: 270, minLegAtr: 3, minLegPct: 0.25, nearAtr: 1.5, recent: 8, chart: 200, breakCloses: 2, gap: 2, cycle: 104 },
     inst: 0.618, smzTop: 0.786, smzBot: 0.826,   // retracement levels
-    entry1: 0.705, entry2: 0.806,                // limit prices: middle of each zone
-    stopPct: 0.01, stopAtr: 0.5,                 // tight stop sits under the SMZ by the larger of 1% / half an ATR
+    entry1: 0.705, entry2: 0.806,                // resting limits: middle of the institutional zone / of the SMZ
+    stopPct: 0.02,                               // a stop level sits 2% under the swing low (or under the SMZ); it is acted on at a close
     ext1: 1.272, ext2: 1.618,
+    minRR: 3,                                    // "at least $3 of upside for every $1 of risk"
+    oversold: 20, extreme: 5,                    // weekly Stochastic RSI %K
+    vpBins: 60, vpWindow: 520, vpShelf: 2, vpThin: 0.7, vpLane: 0.08,   // volume profile: bins, daily bars, shelf = 2x the average bin, thin = under 0.7x
   };
 
   /* ---------- indicators ---------- */
@@ -78,6 +86,35 @@
     return s / n;
   }
 
+  // Stochastic RSI (14, 14, 3, 3): returns the %K series
+  function stochRsiK(closes) {
+    const r = rsi(closes, 14), raw = new Array(r.length).fill(NaN);
+    for (let i = 13; i < r.length; i++) {
+      let lo = Infinity, hi = -Infinity, ok = true;
+      for (let j = i - 13; j <= i; j++) { if (!isFinite(r[j])) { ok = false; break; } if (r[j] < lo) lo = r[j]; if (r[j] > hi) hi = r[j]; }
+      if (ok) raw[i] = hi > lo ? (r[i] - lo) / (hi - lo) * 100 : 50;
+    }
+    return raw.map((_, i) => i >= 2 && isFinite(raw[i]) && isFinite(raw[i - 1]) && isFinite(raw[i - 2]) ? (raw[i] + raw[i - 1] + raw[i - 2]) / 3 : NaN);
+  }
+  /* Volume by price over the last `vpWindow` daily bars.
+     poc   – the price with the most volume
+     shelf – the first heavy block of volume below the last close (conservative entry / support)
+     lane  – when volume is thin right below the close, the price that thin stretch runs down to ("fast lane") */
+  function volumeProfile(dailyAll) {
+    const d = dailyAll.slice(-CFG.vpWindow), B = CFG.vpBins; if (d.length < 60) return null;
+    let lo = Infinity, hi = -Infinity, tot = 0; for (const b of d) { if (b.l < lo) lo = b.l; if (b.h > hi) hi = b.h; tot += b.v || 0; }
+    if (!(hi > lo) || !(tot > 0)) return null;
+    const w = (hi - lo) / B, v = new Array(B).fill(0);
+    for (const b of d) { const a = Math.max(0, Math.min(B - 1, Math.floor((b.l - lo) / w))), z = Math.max(0, Math.min(B - 1, Math.floor((b.h - lo) / w))); const share = (b.v || 0) / (z - a + 1); for (let k = a; k <= z; k++) v[k] += share; }
+    const sm = v.map((x, i) => (x + (i > 0 ? v[i - 1] : x) + (i < B - 1 ? v[i + 1] : x)) / 3), mean = tot / B, mid = i => lo + (i + 0.5) * w;
+    let pocI = 0; for (let i = 1; i < B; i++) if (sm[i] > sm[pocI]) pocI = i;
+    const c = d[d.length - 1].c, ci = Math.max(0, Math.min(B - 1, Math.floor((c - lo) / w)));
+    let shelf = null; for (let i = ci - 1; i >= 0; i--) if (sm[i] >= CFG.vpShelf * mean) { shelf = mid(i); break; }
+    let lane = null;
+    if (sm[ci] < CFG.vpThin * mean) { let i = ci; while (i > 0 && sm[i - 1] < mean) i--; const to = lo + i * w; if ((c - to) / c >= CFG.vpLane) lane = to; }
+    return { poc: mid(pocI), shelf, lane };
+  }
+
   /* ---------- bars ---------- */
   // daily -> weekly (weeks start Monday, UTC date of the bar)
   function toWeekly(daily) {
@@ -117,27 +154,28 @@
     return out;
   }
 
-  /* Bullish legs that are still valid, most recent first.
-     A leg starts at a swing low and ends at the highest high made since.
+  /* Bullish ranges that are still valid, most recent first.
+     A range starts at a swing low and ends at the highest high made since.
      Valid when: the high broke the swing high that preceded the low (break of structure),
-     the low has not been traded through since, and the leg is big enough to matter. */
+     price has not closed below the low `breakCloses` bars in a row, and the range is big enough to matter.
+     On the weekly chart (cfg.cycle) the range is the cycle's range: its high must also clear every high of the
+     two years before its low, so a lower high inside a pullback does not start a new long-term range. */
   function findLegs(bars, swings, cfg, a) {
     const n = bars.length - 1; const legs = [];
-    // suffix arrays: index of the highest high / the lowest low from i to the end
-    const hiI = new Array(n + 2).fill(-1), loV = new Array(n + 2).fill(Infinity);
-    for (let i = n; i >= 0; i--) {
-      hiI[i] = (hiI[i + 1] < 0 || bars[i].h >= bars[hiI[i + 1]].h) ? i : hiI[i + 1];
-      loV[i] = Math.min(bars[i].l, loV[i + 1]);
-    }
+    const hiI = new Array(n + 2).fill(-1);
+    for (let i = n; i >= 0; i--) hiI[i] = (hiI[i + 1] < 0 || bars[i].h >= bars[hiI[i + 1]].h) ? i : hiI[i + 1];
     for (let k = swings.length - 1; k >= 0; k--) {
       const s = swings[k]; if (s.type !== 'L' || s.i >= n) continue;
-      if (loV[s.i + 1] < s.price) continue;                 // low was swept later: not the origin of anything live
+      let run = 0, broken = false, floor = s.price;
+      for (let i = s.i + 1; i <= n; i++) { if (bars[i].c < s.price) { if (++run >= cfg.breakCloses) { broken = true; break; } } else run = 0; if (bars[i].l < floor) floor = bars[i].l; }
+      if (broken) continue;
       const hI = hiI[s.i + 1]; const H = bars[hI].h; const R = H - s.price;
       if (!(R > 0)) continue;
       let prevH = null; for (let j = k - 1; j >= 0; j--) if (swings[j].type === 'H') { prevH = swings[j]; break; }
       if (prevH && !(H > prevH.price)) continue;            // no break of structure
+      if (cfg.cycle) { let mx = -Infinity; for (let i = Math.max(0, s.i - cfg.cycle); i < s.i; i++) if (bars[i].h > mx) mx = bars[i].h; if (!(H > mx)) continue; }
       if (R < cfg.minLegAtr * a || R / s.price < cfg.minLegPct) continue;
-      legs.push({ lowI: s.i, low: s.price, highI: hI, high: H, R, bos: prevH ? prevH.price : null });
+      legs.push({ lowI: s.i, low: s.price, highI: hI, high: H, R, floor, bos: prevH ? prevH.price : null });
     }
     return legs;
   }
@@ -148,8 +186,9 @@
       t1: high, t2: low + R * CFG.ext1, t3: low + R * CFG.ext2 };
   }
 
-  /* One timeframe: pick the live leg, place the price inside it, build the trade plan. */
-  function analyze(barsAll, tf) {
+  /* One timeframe: take the most recent valid range, place the price inside it, build the plan.
+     ctx.soW – weekly Stochastic RSI %K (the same reading serves the daily and the weekly setup) */
+  function analyze(barsAll, tf, ctx) {
     const cfg = CFG[tf]; const bars = barsAll.slice(-cfg.lookback);
     if (bars.length < cfg.strength * 2 + 40) return null;
     const n = bars.length - 1, last = bars[n]; const a = atr(bars, 14); if (!(a > 0)) return null;
@@ -157,78 +196,90 @@
     const legs = findLegs(bars, swings, cfg, a);
     if (!legs.length) return null;
     const c = last.c;
-    // primary leg: the most recent one whose SMZ still holds on a closing basis; otherwise the most recent
-    let pi = legs.findIndex(L => c >= levels(L.low, L.high).smzBot); if (pi < 0) pi = 0;
-    const leg = legs[pi], Z = levels(leg.low, leg.high);
-    const outer = legs.slice(pi + 1).find(L => L.low < leg.low) || null;
+    const leg = legs[0], Z = levels(leg.low, leg.high);
+    const outer = legs.slice(1).find(L => L.low < leg.low) || null;
+    const pos = (leg.high - c) / leg.R;                  // retracement depth of the last close (0 = at the high, 1 = at the low)
 
-    // what the price did since the high
-    let minLow = Infinity, touches = 0, inside = false, lastTouch = -1;
+    // visits to the zones since the high
+    let lastInst = -1; const eps = [];
     for (let i = leg.highI + 1; i <= n; i++) {
-      const b = bars[i]; if (b.l < minLow) minLow = b.l;
-      const t = b.l <= Z.inst; if (t && !inside) touches++; if (t) lastTouch = i; inside = t;
+      const b = bars[i]; if (b.l <= Z.inst) lastInst = i;
+      if (b.l <= Z.smzTop) { const e = eps[eps.length - 1]; if (e && i - e.end <= cfg.gap) { e.end = i; if (b.l < e.low) { e.low = b.l; e.lowI = i; } } else eps.push({ start: i, end: i, low: b.l, lowI: i }); }
     }
-    const sinceTouch = lastTouch < 0 ? null : n - lastTouch;
+    const sinceInst = lastInst < 0 ? null : n - lastInst;
+    // what the previous visit to the Smart Money Zone led to
+    let prior = null;
+    for (let k = eps.length - 1; k >= 0; k--) {
+      const e = eps[k]; if (n - e.end <= cfg.gap) continue;              // still in progress
+      const to = k + 1 < eps.length ? eps[k + 1].start - 1 : n; let mx = -Infinity; for (let i = e.end + 1; i <= to; i++) if (bars[i].h > mx) mx = bars[i].h;
+      if (isFinite(mx)) prior = { t: bars[e.lowI].t, pct: (mx / e.low - 1) * 100 }; break;
+    }
 
     let status;
-    if (c > Z.inst) status = (sinceTouch != null && sinceTouch <= cfg.recent) ? 'bounce' : ((c - Z.inst) <= cfg.nearAtr * a ? 'near' : 'premium');
-    else if (c > Z.smzTop) status = 'inst';
-    else if (c >= Z.smzBot) status = 'smz';
-    else status = 'deep';
+    if (c < leg.low) status = 'under';                   // one close under the swing low: the range is on its last test
+    else if (pos > CFG.smzBot) status = 'deep';
+    else if (pos >= CFG.smzTop) status = 'smz';
+    else if (pos >= CFG.inst) status = 'inst';
+    else status = (sinceInst != null && sinceInst <= cfg.recent) ? 'bounce' : ((c - Z.inst) <= cfg.nearAtr * a ? 'near' : 'premium');
 
     const bx = bxtrender(bars.map(b => b.c)); const bs = bxState(bx.short);
     const bl = bx.long[n], blp = bx.long[n - 1];
+    const soW = ctx && isFinite(ctx.soW) ? ctx.soW : null;
+    const conf = []; if (bs && (bs.trigger === 'hl' || bs.trigger === 'flip')) conf.push('bx'); if (soW != null && soW < CFG.oversold) conf.push('so');
 
-    // plan: enter at the close when inside the zone, otherwise the resting limit in the middle of the institutional zone
-    const inZone = status === 'inst' || status === 'smz';
-    const entry = (inZone || status === 'deep') ? c : Z.e1;
-    const stopTight = Z.smzBot - Math.max(Z.smzBot * CFG.stopPct, a * CFG.stopAtr);
-    const stopStruct = leg.low - Math.max(leg.low * CFG.stopPct, a * CFG.stopAtr);
-    const stop = status === 'deep' ? stopStruct : stopTight;
-    const risk = entry - stop;
+    // plan: at the close when price is in the institutional zone or deeper, otherwise the resting limit in the middle of the SMZ
+    const inRange = status === 'inst' || status === 'smz' || status === 'deep' || status === 'under';
+    const entry = inRange ? c : Z.e2;
+    const stopStruct = leg.floor * (1 - CFG.stopPct);
+    const tight = Z.smzBot * (1 - CFG.stopPct);
+    const stopTight = entry > tight ? tight : null;      // only exists while price is above the SMZ floor
+    const risk = entry - stopStruct;
 
     return {
       tf, status, price: c, atr: a,
-      leg: { low: leg.low, lowT: bars[leg.lowI].t, high: leg.high, highT: bars[leg.highI].t, bos: leg.bos },
+      leg: { low: leg.low, lowT: bars[leg.lowI].t, high: leg.high, highT: bars[leg.highI].t, floor: leg.floor, bos: leg.bos },
       z: Z, outer: outer ? { low: outer.low, lowT: bars[outer.lowI].t, high: outer.high, highT: bars[outer.highI].t } : null,
-      pos: (leg.high - c) / leg.R,                      // retracement depth of the last close (0 = at the high, 1 = at the low)
-      touches, sinceTouch, wickSMZ: isFinite(minLow) && minLow <= Z.smzTop,
-      bx: bs, bxLong: isFinite(bl) ? { v: +bl.toFixed(1), rising: bl > blp } : null,
-      plan: { entry, stop, stopTight, stopStruct, rr: risk > 0 ? (Z.t1 - entry) / risk : null,
+      pos, touches: eps.length, sinceTouch: sinceInst, prior,
+      bx: bs, bxLong: isFinite(bl) ? { v: +bl.toFixed(1), rising: bl > blp } : null, soW, conf,
+      plan: { entry, stopStruct, stopTight, rr: risk > 0 ? (Z.t1 - entry) / risk : null,
         riskPct: risk > 0 ? risk / entry * 100 : null, upPct: (Z.t1 - entry) / entry * 100 },
     };
   }
 
   /* Grade of one timeframe result
-       A  inside the zone + momentum confirmation (BX higher low or red->green flip)
-       B  inside the zone, no confirmation yet
-       C  approaching the zone
-       D  closed below the SMZ – the tight stop is out, only the leg's low still holds
-       E  bounced out of the zone within the last few bars
-       -  far above the zone (waiting for a pullback) */
-  function grade(r) {
-    if (!r) return null;
-    const trig = r.bx && (r.bx.trigger === 'hl' || r.bx.trigger === 'flip');
-    if (r.status === 'inst' || r.status === 'smz') return trig ? 'A' : 'B';
-    if (r.status === 'near') return 'C';
-    if (r.status === 'deep') return 'D';
+       A  in the buy zone (SMZ or deeper, swing low holding) + confirmation + at least 3:1 + bigger trend bullish
+       B  in the buy zone, a condition is still missing (r.why lists which: conf / rr / htf / under)
+       C  in the institutional zone: accumulation area, early for a trade
+       D  approaching the zones
+       E  bounced out of the zones within the last few bars
+       -  far above (waiting for a pullback)
+     htfOk: for a daily setup, whether the weekly range is valid. Always true for the weekly setup (no monthly data here). */
+  function grade(r, htfOk) {
+    if (!r) return null; r.why = [];
+    if (r.status === 'smz' || r.status === 'deep' || r.status === 'under') {
+      if (r.status === 'under') r.why.push('under');
+      if (!r.conf.length) r.why.push('conf');
+      if (!(r.plan.rr >= CFG.minRR)) r.why.push('rr');
+      if (!htfOk) r.why.push('htf');
+      return r.why.length ? 'B' : 'A';
+    }
+    if (r.status === 'inst') return 'C';
+    if (r.status === 'near') return 'D';
     if (r.status === 'bounce') return 'E';
     return '-';
   }
 
-  function score(r, other) {
+  function score(r, other, htfOk, vp) {
     if (!r) return 0; let s = 0;
     const depth = Math.max(0, Math.min(1, (r.pos - CFG.inst) / (CFG.smzTop - CFG.inst)));
-    s += { smz: 30, inst: 20 + depth * 8, deep: 10, near: 10, bounce: 8, premium: 0 }[r.status] || 0;
-    if (r.wickSMZ && r.status === 'inst') s += 4;
-    if (r.bx) s += r.bx.trigger === 'flip' ? 25 : r.bx.trigger === 'hl' ? 18 + Math.min(4, (r.bx.age || 0) * 2) : r.bx.trigger === 'up' ? 6 : 0;
-    if (r.plan.rr != null) s += Math.max(0, Math.min(15, r.plan.rr * 3));
-    s += r.touches <= 1 ? 6 : r.touches === 2 ? 3 : r.touches >= 4 ? -4 : 0;
-    if (other) {                                           // agreement of the other timeframe
-      if (other.status === 'inst' || other.status === 'smz') s += 10;
-      else if (other.pos >= 0.5) s += 5;
-      if (other.bx && other.bx.rising) s += 5;
-    }
+    s += { smz: 30, deep: 28, under: 12, inst: 10 + depth * 8, near: 8, bounce: 6, premium: 0 }[r.status] || 0;
+    if (r.bx) s += r.bx.trigger === 'flip' ? 18 : r.bx.trigger === 'hl' ? 14 : r.bx.trigger === 'up' ? 4 : 0;
+    if (r.soW != null) s += r.soW < CFG.extreme ? 12 : r.soW < CFG.oversold ? 8 : 0;
+    if (r.plan.rr != null) s += Math.max(0, Math.min(15, r.plan.rr * 2.5));
+    if (r.tf === 'd' && htfOk) s += 8;
+    if (other) s += (other.status === 'smz' || other.status === 'deep') ? 6 : other.status === 'inst' ? 3 : 0;
+    if (r.prior && r.prior.pct >= 20) s += 5;
+    if (vp) { if (vp.shelf != null && vp.shelf <= r.price && vp.shelf >= r.plan.stopStruct) s += 4; if (vp.lane != null) s -= 3; }
     return Math.round(Math.max(0, Math.min(100, s)));
   }
 
@@ -236,11 +287,14 @@
   function scanTicker(daily) {
     if (!daily || daily.length < 120) return null;
     const weekly = toWeekly(daily);
-    const d = analyze(daily, 'd'); const w = analyze(weekly, 'w');
+    const kw = stochRsiK(weekly.map(b => b.c)); const soW = kw[kw.length - 1];
+    const d = analyze(daily, 'd', { soW }); const w = analyze(weekly, 'w', { soW });
+    const vp = volumeProfile(daily);
+    const htf = !!w && w.status !== 'under';            // weekly structure still bullish
     const n = daily.length - 1; const last = daily[n], prev = daily[n - 1];
-    const out = { price: last.c, chg: prev ? (last.c / prev.c - 1) * 100 : 0, t: last.t, d: null, w: null, weekly };
-    if (d) { d.grade = grade(d); d.score = score(d, w); out.d = d; }
-    if (w) { w.grade = grade(w); w.score = score(w, d); out.w = w; }
+    const out = { price: last.c, chg: prev ? (last.c / prev.c - 1) * 100 : 0, t: last.t, d: null, w: null, weekly, vp, soW: isFinite(soW) ? soW : null, htf };
+    if (d) { d.grade = grade(d, htf); d.score = score(d, w, htf, vp); out.d = d; }
+    if (w) { w.grade = grade(w, true); w.score = score(w, d, true, vp); out.w = w; }
     return out;
   }
 
@@ -249,10 +303,12 @@
   const day = t => new Date(t * 1000).toISOString().slice(0, 10);
   function packTf(a) {
     if (!a) return null;
-    return { g: a.grade, st: a.status, sc: a.score, lo: px(a.leg.low), lt: day(a.leg.lowT), hi: px(a.leg.high), ht: day(a.leg.highT),
-      atr: px(a.atr), pos: +a.pos.toFixed(3), tc: a.touches, ago: a.sinceTouch, wk: a.wickSMZ ? 1 : 0,
-      bx: a.bx ? [a.bx.v, a.bx.rising ? 1 : 0, a.bx.trigger, a.bx.age] : null, bl: a.bxLong ? [a.bxLong.v, a.bxLong.rising ? 1 : 0] : null,
-      en: px(a.plan.entry), sl: px(a.plan.stopTight), ss: px(a.plan.stopStruct), rr: a.plan.rr == null ? null : +a.plan.rr.toFixed(1),
+    return { g: a.grade, st: a.status, sc: a.score, why: a.why, lo: px(a.leg.low), lt: day(a.leg.lowT), hi: px(a.leg.high), ht: day(a.leg.highT),
+      fl: a.leg.floor < a.leg.low ? px(a.leg.floor) : null,
+      atr: px(a.atr), pos: +a.pos.toFixed(3), tc: a.touches, ago: a.sinceTouch,
+      bx: a.bx ? [a.bx.v, a.bx.rising ? 1 : 0, a.bx.trigger, a.bx.age] : null, bl: a.bxLong ? [a.bxLong.v, a.bxLong.rising ? 1 : 0] : null, cf: a.conf,
+      en: px(a.plan.entry), ss: px(a.plan.stopStruct), sl: px(a.plan.stopTight), rr: a.plan.rr == null ? null : +a.plan.rr.toFixed(1),
+      pb: a.prior ? [day(a.prior.t), Math.round(a.prior.pct)] : null,
       ol: a.outer ? px(a.outer.low) : null, oh: a.outer ? px(a.outer.high) : null };
   }
   /* meta: {name, idx: ['sp','ndx','x']} */
@@ -262,6 +318,8 @@
     const dn = CFG.d.chart, wn = CFG.w.chart;
     return { s: sym, n: meta.name || sym, i: meta.idx || [], p: px(r.price), ch: +r.chg.toFixed(2), t: day(r.t),
       d: packTf(r.d), w: packTf(r.w),
+      so: r.soW == null ? null : +r.soW.toFixed(1), hf: r.htf ? 1 : 0,
+      vp: r.vp ? { poc: px(r.vp.poc), sh: px(r.vp.shelf), ln: px(r.vp.lane) } : null,
       cd: daily.slice(-dn).map(b => px(b.c)), d0: day(daily[Math.max(0, daily.length - dn)].t),
       cw: r.weekly.slice(-wn).map(b => px(b.c)), w0: day(r.weekly[Math.max(0, r.weekly.length - wn)].t),
       _dt: daily.slice(-dn).map(b => day(b.t)), _wt: r.weekly.slice(-wn).map(b => day(b.t)) };   // dates of the chart points; buildScan keeps one shared copy
@@ -284,7 +342,7 @@
     }
     rows.sort((x, y) => x.s < y.s ? -1 : 1);
     return Object.assign({ v: CFG.version, asOf, generated: new Date().toISOString(), cal,
-      cfg: { inst: CFG.inst, smzTop: CFG.smzTop, smzBot: CFG.smzBot, entry1: CFG.entry1, entry2: CFG.entry2, ext1: CFG.ext1, ext2: CFG.ext2 }, rows }, info || {});
+      cfg: { inst: CFG.inst, smzTop: CFG.smzTop, smzBot: CFG.smzBot, entry1: CFG.entry1, entry2: CFG.entry2, ext1: CFG.ext1, ext2: CFG.ext2, minRR: CFG.minRR, oversold: CFG.oversold, extreme: CFG.extreme }, rows }, info || {});
   }
   // bars from a Yahoo chart response; drops the still-forming bar of an open session
   function barsFromYahoo(res, nowSec) {
@@ -298,6 +356,6 @@
     return bars;
   }
 
-  return { CFG, ema, rsi, bxtrender, bxState, atr, toWeekly, findSwings, findLegs, levels, analyze, grade, score, scanTicker,
+  return { CFG, ema, rsi, bxtrender, bxState, stochRsiK, volumeProfile, atr, toWeekly, findSwings, findLegs, levels, analyze, grade, score, scanTicker,
     px, day, buildRow, buildScan, barsFromYahoo };
 });
