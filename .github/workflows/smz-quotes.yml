@@ -4,8 +4,9 @@ name: SMZ live prices
 # The schedule only makes sure a run is alive: a run that finds fresh prices already being published exits at once,
 # and a run that starts before the open waits for it. GitHub may start scheduled runs a few minutes late.
 on:
+  # GitHub often skips or delays scheduled runs, so the launch is attempted every 10 minutes through the session.
   schedule:
-    - cron: '7,22,37,52 13-20 * * 1-5'
+    - cron: '3,13,23,33,43,53 13-20 * * 1-5'
   workflow_dispatch:
 
 permissions:

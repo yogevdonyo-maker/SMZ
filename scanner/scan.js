@@ -116,6 +116,7 @@ async function main() {
 
   const cnt = { d: {}, w: {} }; for (const r of scan.rows) for (const tf of ['d', 'w']) if (r[tf]) cnt[tf][r[tf].g] = (cnt[tf][r[tf].g] || 0) + 1;
   console.log(`as of ${scan.asOf} · ${rows.length}/${syms.length} tickers · ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+  if (!fixture && prev && prev.asOf && scan.asOf <= prev.asOf) console.log(`note: no newer close than the previous scan (${prev.asOf}); Yahoo may not have published today's bar yet`);
   console.log('daily ', JSON.stringify(cnt.d)); console.log('weekly', JSON.stringify(cnt.w));
   if (failed.length) console.log('failed:', failed.join(', '));
   notes.forEach(n => console.log('note:', n));

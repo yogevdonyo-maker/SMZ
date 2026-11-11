@@ -351,8 +351,10 @@
       const c = Q.close[i]; if (c == null || Q.high[i] == null || Q.low[i] == null) continue;
       bars.push({ t: T[i], o: Q.open[i] == null ? c : Q.open[i], h: Q.high[i], l: Q.low[i], c, v: Q.volume[i] || 0 });
     }
+    // the last bar is still forming when it carries today's New York date and the regular session has not ended yet
     const reg = res.meta && res.meta.currentTradingPeriod && res.meta.currentTradingPeriod.regular;
-    if (bars.length && reg && bars[bars.length - 1].t >= reg.start && nowSec < reg.end) bars.pop();
+    const ny = t => new Date(t * 1000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    if (bars.length && reg && ny(bars[bars.length - 1].t) === ny(nowSec) && nowSec < reg.end) bars.pop();
     return bars;
   }
 
