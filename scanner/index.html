@@ -118,6 +118,10 @@ button{ cursor:pointer; }
 .act.g-B{ color:var(--text); }
 .links{ margin-top:12px; display:flex; flex-wrap:wrap; gap:12px; font-size:13px; }
 .links a{ color:var(--blue); }
+.mailbtn{ height:32px; padding:0 12px; border:1px solid var(--line2); border-radius:var(--radius); background:var(--panel); font-size:13px; display:inline-flex; align-items:center; gap:6px; }
+.mailbtn:disabled{ opacity:.6; cursor:default; }
+.mailmsg{ font-size:12.5px; color:var(--muted); }
+.mailmsg.ok{ color:var(--up); } .mailmsg.err{ color:var(--down); }
 
 .live{ display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--muted); }
 .live a{ color:var(--blue); }
@@ -366,7 +370,7 @@ function detailHTML(r){
         <div class="sep"></div>
         ${vol}${pb}${oth}${outer}
       </dl>
-      <div class="links"><a href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(r.s.replace('.','-'))}" target="_blank" rel="noopener">גרף נרות ב-TradingView</a></div>
+      <div class="links"><a href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(r.s.replace('.','-'))}" target="_blank" rel="noopener">גרף נרות ב-TradingView</a>${MAIL.on?`<button type="button" class="mailbtn" data-mail="${r.s}">✉ סקירה מלאה למייל</button><span class="mailmsg" id="mm-${r.s}"></span>`:''}</div>
     </div></div>`;
 }
 
@@ -492,6 +496,29 @@ function liveStart(){
   pollQuotes();
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&Date.now()-lastPoll>POLL*1000) pollQuotes(); else wsSync(); });
 }
+/* "review by email": fires the scheduled task "סקירת מניה למייל (SMZ)"; the task writes the review and its completion email carries it.
+   Works only where the page can reach the viewer's Claude connectors (the copy published in Claude), not on the GitHub site. */
+const MAIL={on:false,mcp:null,trig:'trig_01Gf3CEnKXVBQ9LewVUTCtXJ',busy:false};
+async function mailInit(){
+  try{ if(!window.claude||typeof window.claude.use!=='function') return; const mcp=await window.claude.use('mcp'); if(!mcp) return; MAIL.mcp=mcp; MAIL.on=true; if(st.open) render(); }catch(e){}
+}
+async function mailSend(sym){
+  const msg=document.getElementById('mm-'+sym), btn=document.querySelector(`.mailbtn[data-mail="${sym}"]`); if(!msg||MAIL.busy) return;
+  MAIL.busy=true; btn.disabled=true; msg.className='mailmsg'; msg.textContent='שולח בקשה…';
+  const r=SCAN.rows.find(x=>x.s===sym); const tf=st.tf==='d'?'יומי':'שבועי';
+  try{
+    await MAIL.mcp.callTool('Claude Code Remote','fire_trigger',{trigger_id:MAIL.trig,text:`TICKER: ${sym} (${r.n}). Requested from the SMZ scanner, ${tf} view, scan as of ${SCAN.asOf}.`},{cache:false});
+    msg.className='mailmsg ok'; msg.textContent='הבקשה נשלחה. הסקירה תגיע למייל בתוך כמה דקות.';
+  }catch(e){
+    const c=e&&e.code; msg.className='mailmsg err';
+    msg.textContent=c==='approval_required'||c==='consent_required'?'צריך לאשר ל-Claude Code Remote לפעול מהדף הזה, ואז ללחוץ שוב.'
+      :c==='server_not_connected'||c==='needs_reauth'?'החיבור Claude Code Remote לא זמין בדפדפן הזה.'
+      :c==='not_in_manifest'||c==='blocked_by_policy'?'הדף לא קיבל הרשאה לשלוח את הבקשה.'
+      :'השליחה נכשלה'+(e&&e.message?': '+String(e.message).slice(0,80):'')+'. אפשר לנסות שוב.';
+    btn.disabled=false;
+  }
+  MAIL.busy=false; if(!btn.disabled) return; setTimeout(()=>{ btn.disabled=false; },15000);
+}
 function header(){
   const u=SCAN.universe||{};
   $('#sub').innerHTML=`נכון לסגירת המסחר ב-${heDate(SCAN.asOf)} · <span class="num">${u.total||SCAN.rows.length}</span> מניות: S&amp;P 500, נאסד"ק 100 ורשימת מעקב`;
@@ -508,7 +535,9 @@ function start(data){
   $('#chips').addEventListener('click',e=>{ const b=e.target.closest('.chip'); if(!b) return; const g=b.dataset.g; st.grades=st.grades.includes(g)?st.grades.filter(x=>x!==g):st.grades.concat(g); LS.set('smzscan.g',st.grades); render(); });
   document.addEventListener('click',e=>{ const t=e.target.closest('[data-tf]'); if(t){ st.tf=t.dataset.tf; LS.set('smzscan.tf',st.tf); render(); return; }
     const i=e.target.closest('[data-ix]'); if(i){ st.ix=i.dataset.ix; LS.set('smzscan.ix',st.ix); render(); return; }
+    const mb=e.target.closest('.mailbtn'); if(mb){ mailSend(mb.dataset.mail); return; }
     const r=e.target.closest('.row'); if(r){ st.open=st.open===r.dataset.s?null:r.dataset.s; render(); } });
+  mailInit();
   $('#q').addEventListener('input',e=>{ st.q=e.target.value; render(); });
   $('#sort').addEventListener('change',e=>{ st.sort=e.target.value; render(); });
   $('#both').addEventListener('change',e=>{ st.both=e.target.checked; render(); });
