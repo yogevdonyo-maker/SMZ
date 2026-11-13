@@ -6,9 +6,10 @@
                                                   to the repo's `live` branch every minute (what the workflow runs)
 
    The loop asks Yahoo for prices in batches of 20 and refreshes the day's high/low with a full per-ticker pass every
-   15 minutes. With the market-wide universe the tickers are split in two tiers: the index members, the watch list and
-   every stock in or near a zone (grades A–E) are refreshed every minute; the rest (far above their zones, or without
-   a valid range) every COLD_EVERY minutes. The `live` branch always holds a single commit.
+   15 minutes for the index members and the watch list. With the market-wide universe the tickers are split in tiers:
+   the index members, the watch list and every stock in or near a zone (grades A–E) are refreshed every minute; the rest
+   (far above their zones, or without a valid range) every COLD_EVERY minutes; the day's range of the broad list is
+   widened from the prices seen. The `live` branch always holds a single commit.
    Needs Node 18+. In loop mode: GH_REMOTE (push URL with a token), GITHUB_REPOSITORY, GITHUB_TOKEN. */
 'use strict';
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
@@ -23,7 +24,8 @@ const STEP = +process.env.SMZ_STEP || 60;   // seconds between publishes
 const FULL_EVERY = 15 * 60;           // seconds between full passes (day high/low) of the hot tier
 const COLD_EVERY = +process.env.SMZ_COLD_EVERY || 5;   // rounds between refreshes of the cold tier
 const HOT_GRADES = new Set(['A', 'B', 'C', 'D', 'E']);
-const isHot = r => (r.i || []).some(i => i === 'sp' || i === 'ndx' || i === 'x') || (r.d && HOT_GRADES.has(r.d.g)) || (r.w && HOT_GRADES.has(r.w.g));
+const isCore = r => (r.i || []).some(i => i === 'sp' || i === 'ndx' || i === 'x');   // index members and the watch list: full pass (day range) every FULL_EVERY
+const isHot = r => isCore(r) || (r.d && HOT_GRADES.has(r.d.g)) || (r.w && HOT_GRADES.has(r.w.g));
 const MAX_RUN = 5 * 3600 + 40 * 60;   // a GitHub job may run 6 hours; hand over before that
 const FRESH = 150;                    // a published file younger than this means another run is feeding the branch
 
@@ -88,6 +90,7 @@ async function main() {
   const scan = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'scan.json'), 'utf8'));
   const syms = scan.rows.map(r => r.s); const force = !!opt('force'); const loop = !!opt('loop');
   const hot = scan.rows.filter(isHot).map(r => r.s), cold = scan.rows.filter(r => !isHot(r)).map(r => r.s);
+  const core = scan.rows.filter(isCore).map(r => r.s), hotRest = scan.rows.filter(r => isHot(r) && !isCore(r)).map(r => r.s);
   const probe = await chartMeta('SPY'); const reg = probe.currentTradingPeriod && probe.currentTradingPeriod.regular;
   if (!reg) throw new Error('no trading hours from Yahoo');
   const isOpen = () => now() >= reg.start && now() < reg.end;
@@ -125,7 +128,7 @@ async function main() {
     // every round: the hot tier (full pass for the day's range every FULL_EVERY, otherwise quick); every COLD_EVERY rounds: the cold tier too (quick)
     const withCold = cold.length && n % COLD_EVERY === 0;
     let ok, asked = hot.length + (withCold ? cold.length : 0);
-    if (t0 - lastFull >= FULL_EVERY) { ok = await fullPass(hot, Q); lastFull = t0; } else ok = await quickPass(hot, Q);
+    if (t0 - lastFull >= FULL_EVERY) { ok = await fullPass(core, Q) + await quickPass(hotRest, Q); lastFull = t0; } else ok = await quickPass(hot, Q);
     if (withCold) ok += await quickPass(cold, Q);
     if (ok >= asked * 0.8) {
       fs.writeFileSync(path.join(dir, 'quotes.json'), payload({ loopStart }));
