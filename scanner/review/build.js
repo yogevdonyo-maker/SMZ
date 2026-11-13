@@ -4,6 +4,8 @@
    node scanner/review/build.js content.json [--scan path/scan.json] [--quotes quotes.json] [--out dir]
    --quotes: the live-price file the dashboard uses (branch `live`); when its price is newer than the scan's close,
    the review shows the current price, its place in the zones and the reward/risk from it.
+   --pdf-url: absolute URL where the PDF will be served (e.g. on the GitHub Pages site); the page's download button points there.
+   Output names carry the date: <TICKER>-review-<YYYY-MM-DD>.pdf, so several reviews of one stock can live side by side.
 
    content.json holds the written parts (see example.json). The technical part – ranges, zones, entry, stops,
    targets, the math and the level map – is computed here from scan.json, so the numbers always match the scanner.
@@ -170,11 +172,14 @@ ${(C.remember || []).length ? `<h2>מה לזכור</h2><ul>${C.remember.map(b =>
 <p class="foot">מקורות: ${(C.sources || []).map(s => Array.isArray(s) ? `<a href="${esc(s[1])}">${esc(s[0])}</a>` : esc(s)).join(' · ')}${(C.sources || []).length ? ' · ' : ''}הרמות הטכניות מתוך סורק SMZ (yogevdonyo-maker.github.io/SMZ/scanner), נכון לסגירת ${heDate(asOf)}. אינו ייעוץ השקעות.</p>
 </div></body></html>`;
 
+const stamp = (live ? new Date(live.t * 1000) : new Date()).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+const pdfName = `${T}-review-${stamp}.pdf`;
+const pdfUrl = opt('pdf-url', null) || pdfName;
 const base = path.join(OUT, `${T}-review`);
 fs.writeFileSync(base + '.html', html);
 // the same page as an artifact body (no document skeleton; the Artifact tool adds one), with a link to the PDF published beside it
 const body = html.slice(html.indexOf('<title>'), html.lastIndexOf('</body>')).replace(/<\/head>\s*<body>/, '')
-  .replace('<p class="disc">', `<p class="pdf"><a href="${T}-review.pdf" target="_blank" rel="noopener">⬇ הורדת הסקירה כ-PDF</a></p><p class="disc">`)
+  .replace('<p class="disc">', `<p class="pdf"><a href="${pdfUrl}" target="_blank" rel="noopener">⬇ הורדת הסקירה כ-PDF</a></p><p class="disc">`)
   .replace('@page{', '.pdf{ margin:0 0 10px; } .pdf a{ color:var(--blue); font-weight:500; text-decoration:none; border:1px solid var(--line); border-radius:6px; padding:6px 12px; display:inline-block; }\n@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --bg:#15171c; --fg:#e4e5e8; --muted:#979ba6; --line:#2b2e36; --panel:#1e2128; --up:#2fb594; --down:#ef6b73; --blue:#7ea2ff; --smz:#c98ad8; --smz-bg:rgba(201,138,216,.18); --inst-bg:rgba(126,162,255,.16); color-scheme:dark; } }\n:root[data-theme="dark"]{ --bg:#15171c; --fg:#e4e5e8; --muted:#979ba6; --line:#2b2e36; --panel:#1e2128; --up:#2fb594; --down:#ef6b73; --blue:#7ea2ff; --smz:#c98ad8; --smz-bg:rgba(201,138,216,.18); --inst-bg:rgba(126,162,255,.16); color-scheme:dark; }\n@page{')
   .replace('<div class="wrap">', '<div class="wrap" dir="rtl" lang="he">')
   .replace('.wrap{ max-width:72ch; margin:0 auto; padding:26px 20px 48px; }', '.wrap{ max-width:72ch; margin:0 auto; padding-block:26px 48px; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px)); }');
@@ -185,8 +190,8 @@ fs.writeFileSync(base + '.artifact.html', body);
     const { chromium } = require('playwright');
     const b = await chromium.launch(); const p = await b.newPage();
     await p.setContent(html, { waitUntil: 'load' }); await p.evaluate(() => document.fonts.ready);
-    await p.pdf({ path: base + '.pdf', format: 'A4', printBackground: true, preferCSSPageSize: true });
+    await p.pdf({ path: path.join(OUT, pdfName), format: 'A4', printBackground: true, preferCSSPageSize: true });
     await b.close(); pdf = true;
   } catch (e) { console.error('PDF not rendered:', e.message); }
-  console.log(JSON.stringify({ html: base + '.html', artifact: base + '.artifact.html', pdf: pdf ? base + '.pdf' : null, pdfName: `${T}-review.pdf`, ticker: T, asOf, price, live: live ? { price: live.p, time: new Date(live.t * 1000).toISOString(), changeFromClosePct: +live.chg.toFixed(2), marketOpen: live.open } : null }));
+  console.log(JSON.stringify({ html: base + '.html', artifact: base + '.artifact.html', pdf: pdf ? path.join(OUT, pdfName) : null, pdfName, pdfUrl, ticker: T, asOf, price, live: live ? { price: live.p, time: new Date(live.t * 1000).toISOString(), changeFromClosePct: +live.chg.toFixed(2), marketOpen: live.open } : null }));
 })();
