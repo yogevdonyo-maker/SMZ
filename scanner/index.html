@@ -124,6 +124,9 @@ button{ cursor:pointer; }
 .mailbtn[aria-disabled="true"]{ opacity:.6; cursor:default; }
 .mailbtn:disabled{ opacity:.6; cursor:default; }
 .mailmsg{ font-size:12.5px; color:var(--muted); }
+.mailbtn.sent{ color:var(--up); border-color:var(--up); background:var(--up-bg); }
+.hashbar{ display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; padding:12px 14px; border:1px solid var(--up); border-radius:var(--radius); background:var(--up-bg); }
+.hashbar b{ font-size:15px; } .hashbar .mailbtn{ height:36px; font-size:14px; background:var(--bg); }
 .mailmsg.ok{ color:var(--up); } .mailmsg.err{ color:var(--down); }
 
 .live{ display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--muted); }
@@ -170,6 +173,7 @@ details.how li{ margin-bottom:5px; }
     <span class="live" id="live" hidden></span>
   </header>
 
+  <div class="hashbar" id="hashbar" hidden></div>
   <div class="chips" id="chips" role="group" aria-label="סינון לפי מצב"></div>
 
   <div class="bar">
@@ -504,33 +508,53 @@ function liveStart(){
 const MAIL={on:false,mcp:null,trig:'trig_01Gf3CEnKXVBQ9LewVUTCtXJ',busy:false};
 const ARTIFACT='https://claude.ai/artifact/7AwKuvdd9ye2NcYX7AEiea';
 /* in the row header: on the copy inside Claude the button fires the task; on the website it opens that copy on this ticker */
+const SENT_FOR=60*60000;   // a sent request is remembered for an hour
+const sentAt=sym=>{ const m=LS.get('smzscan.sent',{}); const t=m[sym]; return t&&Date.now()-t<SENT_FOR?t:null; };
+const markSent=sym=>{ const m=LS.get('smzscan.sent',{}); for(const k in m) if(Date.now()-m[k]>SENT_FOR) delete m[k]; m[sym]=Date.now(); LS.set('smzscan.sent',m); };
+const hm=t=>new Date(t).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+function mailBtn(sym,big){
+  const t=sentAt(sym); const lbl=big?'✉ שליחת סקירה מלאה למייל':'✉ סקירה';
+  if(t) return `<span role="button" tabindex="0" class="mailbtn sent" data-mail="${sym}" title="נשלח ב-${hm(t)}. המייל מגיע תוך כמה דקות">✓ נשלח ${hm(t)}</span>`;
+  return `<span role="button" tabindex="0" class="mailbtn" data-mail="${sym}" title="סקירה מלאה למייל">${lbl}</span>`;
+}
 function mailCtl(sym){
-  if(MAIL.on) return `<span role="button" tabindex="0" class="mailbtn" data-mail="${sym}" title="סקירה מלאה למייל">✉ סקירה</span>`;
+  if(MAIL.on) return mailBtn(sym,false);
   if(INLINE) return '';
-  return `<a class="maillink" href="${ARTIFACT}#${encodeURIComponent(sym)}" target="_blank" rel="noopener" title="פותח את הלוח ב-Claude על המניה הזו, שם כפתור השליחה למייל">✉ סקירה</a>`;
+  const t=sentAt(sym);
+  return `<a class="maillink" href="${ARTIFACT}#${encodeURIComponent(sym)}" target="_blank" rel="noopener" data-open="${sym}" title="פותח את הלוח ב-Claude על המניה הזו, שם כפתור השליחה למייל">${t?'↗ נפתח ב-Claude '+hm(t):'✉ סקירה'}</a>`;
+}
+function hashBar(sym){
+  const el=$('#hashbar'); if(!sym||!MAIL.on){ el.hidden=true; return; }
+  const r=SCAN.rows.find(x=>x.s===sym); if(!r){ el.hidden=true; return; }
+  const t=sentAt(sym);
+  el.hidden=false; el.innerHTML=`<b class="num">${esc(sym)}</b><span>${esc(r.n)}</span>${mailBtn(sym,true)}<span class="mailmsg" id="hb-msg">${t?'הבקשה כבר נשלחה. המייל מגיע תוך כמה דקות.':''}</span>`;
 }
 async function mailInit(){
-  try{ if(!window.claude||typeof window.claude.use!=='function') return; const mcp=await window.claude.use('mcp'); if(!mcp) return; MAIL.mcp=mcp; MAIL.on=true; if(st.open) render(); }catch(e){}
+  try{ if(!window.claude||typeof window.claude.use!=='function') return; const mcp=await window.claude.use('mcp'); if(!mcp) return; MAIL.mcp=mcp; MAIL.on=true; render(); const h=decodeURIComponent(location.hash.slice(1)).toUpperCase(); if(h) hashBar(h); }catch(e){}
 }
 async function mailSend(sym){
   if(MAIL.busy) return;
   if(st.open!==sym){ st.open=sym; render(); }
-  const msg=document.getElementById('mm-'+sym); const btns=[...document.querySelectorAll(`.mailbtn[data-mail="${sym}"]`)]; if(!msg) return;
+  const msg=document.getElementById('mm-'+sym); const hb=document.getElementById('hb-msg'); if(!msg) return;
+  const say=(cls,txt)=>{ msg.className='mailmsg '+cls; msg.textContent=txt; if(hb){ hb.className='mailmsg '+cls; hb.textContent=txt; } };
+  const was=sentAt(sym); if(was){ say('ok',`כבר נשלח ב-${hm(was)}. המייל מגיע תוך כמה דקות; אפשר לשלוח שוב בעוד ${Math.ceil((SENT_FOR-(Date.now()-was))/60000)} דק'.`); return; }
+  const btns=[...document.querySelectorAll(`.mailbtn[data-mail="${sym}"]`)];
   const dis=v=>btns.forEach(b=>b.setAttribute('aria-disabled',String(v)));
-  MAIL.busy=true; dis(true); msg.className='mailmsg'; msg.textContent='שולח בקשה…'; msg.scrollIntoView({block:'nearest'});
+  MAIL.busy=true; dis(true); say('','שולח בקשה…'); msg.scrollIntoView({block:'nearest'});
   const r=SCAN.rows.find(x=>x.s===sym); const tf=st.tf==='d'?'יומי':'שבועי';
   try{
     await MAIL.mcp.callTool('Claude Code Remote','fire_trigger',{trigger_id:MAIL.trig,text:`TICKER: ${sym} (${r.n}). Requested from the SMZ scanner, ${tf} view, scan as of ${SCAN.asOf}.`},{cache:false});
-    msg.className='mailmsg ok'; msg.textContent='הבקשה נשלחה. הסקירה תגיע למייל בתוך כמה דקות.';
+    markSent(sym); MAIL.busy=false; render(); hashBar(location.hash.slice(1).toUpperCase()===sym?sym:null);
+    const m2=document.getElementById('mm-'+sym), h2=document.getElementById('hb-msg'); const txt=`נשלח ✓ ${hm(Date.now())}. הסקירה תגיע למייל בתוך כמה דקות.`;
+    if(m2){ m2.className='mailmsg ok'; m2.textContent=txt; } if(h2){ h2.className='mailmsg ok'; h2.textContent=txt; }
   }catch(e){
-    const c=e&&e.code; msg.className='mailmsg err';
-    msg.textContent=c==='approval_required'||c==='consent_required'?'צריך לאשר ל-Claude Code Remote לפעול מהדף הזה, ואז ללחוץ שוב.'
+    const c=e&&e.code;
+    say('err', c==='approval_required'||c==='consent_required'?'צריך לאשר ל-Claude Code Remote לפעול מהדף הזה, ואז ללחוץ שוב.'
       :c==='server_not_connected'||c==='needs_reauth'?'החיבור Claude Code Remote לא זמין בדפדפן הזה.'
       :c==='not_in_manifest'||c==='blocked_by_policy'?'הדף לא קיבל הרשאה לשלוח את הבקשה.'
-      :'השליחה נכשלה'+(e&&e.message?': '+String(e.message).slice(0,80):'')+'. אפשר לנסות שוב.';
-    MAIL.busy=false; dis(false); return;
+      :'השליחה נכשלה'+(e&&e.message?': '+String(e.message).slice(0,80):'')+'. אפשר לנסות שוב.');
+    MAIL.busy=false; dis(false);
   }
-  setTimeout(()=>{ MAIL.busy=false; dis(false); },15000);
 }
 function header(){
   const u=SCAN.universe||{};
@@ -549,7 +573,7 @@ function start(data){
   document.addEventListener('click',e=>{ const t=e.target.closest('[data-tf]'); if(t){ st.tf=t.dataset.tf; LS.set('smzscan.tf',st.tf); render(); return; }
     const i=e.target.closest('[data-ix]'); if(i){ st.ix=i.dataset.ix; LS.set('smzscan.ix',st.ix); render(); return; }
     const mb=e.target.closest('.mailbtn'); if(mb){ if(mb.getAttribute('aria-disabled')!=='true') mailSend(mb.dataset.mail); return; }
-    if(e.target.closest('a.maillink')) return;
+    const ml=e.target.closest('a.maillink'); if(ml){ markSent(ml.dataset.open); setTimeout(render,300); return; }
     const r=e.target.closest('.row'); if(r){ st.open=st.open===r.dataset.s?null:r.dataset.s; render(); } });
   document.addEventListener('keydown',e=>{ if(e.key!=='Enter'&&e.key!==' ') return; const t=e.target; if(t.classList&&t.classList.contains('row')){ e.preventDefault(); t.click(); } else if(t.classList&&t.classList.contains('mailbtn')){ e.preventDefault(); t.click(); } });
   // opened from the website with #TICKER: show that stock
