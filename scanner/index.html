@@ -68,7 +68,9 @@ button{ cursor:pointer; }
 .list{ border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
 .row, .lhead{ display:grid; grid-template-columns:minmax(140px,1.4fr) 88px 150px minmax(120px,1.1fr) 124px 72px 72px 50px 158px 36px; gap:10px; align-items:center; padding:9px 12px; }
 .lhead{ background:var(--bg2); color:var(--muted); font-size:12px; border-bottom:1px solid var(--line); }
-.row{ width:100%; border:0; border-bottom:1px solid var(--line); background:var(--bg); text-align:start; }
+.row{ width:100%; border:0; border-bottom:1px solid var(--line); background:var(--bg); text-align:start; cursor:pointer; user-select:none; }
+.sym .mailbtn, .sym .maillink{ margin-inline-start:8px; vertical-align:2px; height:24px; padding:0 8px; font-size:12px; text-decoration:none; color:var(--text); }
+.sym .maillink{ border:1px solid var(--line2); border-radius:var(--radius); background:var(--panel); display:inline-flex; align-items:center; gap:4px; }
 .row:hover{ background:var(--bg2); }
 .row[aria-expanded="true"]{ background:var(--panel); }
 .item:last-child .row[aria-expanded="false"]{ border-bottom:0; }
@@ -118,7 +120,8 @@ button{ cursor:pointer; }
 .act.g-B{ color:var(--text); }
 .links{ margin-top:12px; display:flex; flex-wrap:wrap; gap:12px; font-size:13px; }
 .links a{ color:var(--blue); }
-.mailbtn{ height:32px; padding:0 12px; border:1px solid var(--line2); border-radius:var(--radius); background:var(--panel); font-size:13px; display:inline-flex; align-items:center; gap:6px; }
+.mailbtn{ height:32px; padding:0 12px; border:1px solid var(--line2); border-radius:var(--radius); background:var(--panel); font-size:13px; display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+.mailbtn[aria-disabled="true"]{ opacity:.6; cursor:default; }
 .mailbtn:disabled{ opacity:.6; cursor:default; }
 .mailmsg{ font-size:12.5px; color:var(--muted); }
 .mailmsg.ok{ color:var(--up); } .mailmsg.err{ color:var(--down); }
@@ -313,8 +316,8 @@ function rowHTML(r){
   const idx=r.i.includes('x')?'<span class="tag">מעקב</span>':'';
   const isNew=a.was&&a.since===SCAN.asOf?'<span class="tag">חדש</span>':'';
   const bx=(a.bx?`<i class="sq" style="background:var(${a.bx[0]>0?'--up':'--down'})"></i>${TRIG[a.bx[2]]}`:'–')+(soTxt(r.so)?` <span class="os">· מכירת יתר</span>`:'');
-  return `<div class="item"><button type="button" class="row" data-s="${r.s}" aria-expanded="${open}">
-    <span class="sym"><b class="num">${esc(r.s)}</b>${idx}${isNew}<small>${esc(r.n)}</small></span>
+  return `<div class="item"><div class="row" role="button" tabindex="0" data-s="${r.s}" aria-expanded="${open}">
+    <span class="sym"><b class="num">${esc(r.s)}</b>${idx}${isNew}${mailCtl(r.s)}<small>${esc(r.n)}</small></span>
     <span class="price num">${priceHTML(r)}</span>
     <span class="st"><span><span class="badge g-${g}">${G[g].t}</span><span class="nowslot">${nowTag(r,a)}</span></span></span>
     <span class="posw"><span class="pos" style="display:block"><i class="zs"></i><i class="zi"></i><i class="pt" style="left:${p.toFixed(1)}%"></i></span></span>
@@ -326,7 +329,7 @@ function rowHTML(r){
       <span class="bx"><span class="k">אישור</span>${bx}</span>
       <span class="score num"><span class="k">ציון </span>${a.sc}</span>
     </span>
-  </button>${open?detailHTML(r):''}</div>`;
+  </div>${open?detailHTML(r):''}</div>`;
 }
 function detailHTML(r){
   const a=r[st.tf], g=gOf(a), Z=lv(a), other=st.tf==='d'?r.w:r.d, otherName=st.tf==='d'?'שבועי':'יומי';
@@ -370,7 +373,7 @@ function detailHTML(r){
         <div class="sep"></div>
         ${vol}${pb}${oth}${outer}
       </dl>
-      <div class="links"><a href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(r.s.replace('.','-'))}" target="_blank" rel="noopener">גרף נרות ב-TradingView</a>${MAIL.on?`<button type="button" class="mailbtn" data-mail="${r.s}">✉ סקירה מלאה למייל</button><span class="mailmsg" id="mm-${r.s}"></span>`:''}</div>
+      <div class="links"><a href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(r.s.replace('.','-'))}" target="_blank" rel="noopener">גרף נרות ב-TradingView</a>${MAIL.on?`<span role="button" tabindex="0" class="mailbtn" data-mail="${r.s}">✉ סקירה מלאה למייל</span><span class="mailmsg" id="mm-${r.s}"></span>`:INLINE?'':`<a class="maillink" href="${ARTIFACT}#${encodeURIComponent(r.s)}" target="_blank" rel="noopener">✉ סקירה מלאה למייל</a>`}</div>
     </div></div>`;
 }
 
@@ -499,12 +502,22 @@ function liveStart(){
 /* "review by email": fires the scheduled task "סקירת מניה למייל (SMZ)"; the task writes the review and its completion email carries it.
    Works only where the page can reach the viewer's Claude connectors (the copy published in Claude), not on the GitHub site. */
 const MAIL={on:false,mcp:null,trig:'trig_01Gf3CEnKXVBQ9LewVUTCtXJ',busy:false};
+const ARTIFACT='https://claude.ai/artifact/7AwKuvdd9ye2NcYX7AEiea';
+/* in the row header: on the copy inside Claude the button fires the task; on the website it opens that copy on this ticker */
+function mailCtl(sym){
+  if(MAIL.on) return `<span role="button" tabindex="0" class="mailbtn" data-mail="${sym}" title="סקירה מלאה למייל">✉ סקירה</span>`;
+  if(INLINE) return '';
+  return `<a class="maillink" href="${ARTIFACT}#${encodeURIComponent(sym)}" target="_blank" rel="noopener" title="פותח את הלוח ב-Claude על המניה הזו, שם כפתור השליחה למייל">✉ סקירה</a>`;
+}
 async function mailInit(){
   try{ if(!window.claude||typeof window.claude.use!=='function') return; const mcp=await window.claude.use('mcp'); if(!mcp) return; MAIL.mcp=mcp; MAIL.on=true; if(st.open) render(); }catch(e){}
 }
 async function mailSend(sym){
-  const msg=document.getElementById('mm-'+sym), btn=document.querySelector(`.mailbtn[data-mail="${sym}"]`); if(!msg||MAIL.busy) return;
-  MAIL.busy=true; btn.disabled=true; msg.className='mailmsg'; msg.textContent='שולח בקשה…';
+  if(MAIL.busy) return;
+  if(st.open!==sym){ st.open=sym; render(); }
+  const msg=document.getElementById('mm-'+sym); const btns=[...document.querySelectorAll(`.mailbtn[data-mail="${sym}"]`)]; if(!msg) return;
+  const dis=v=>btns.forEach(b=>b.setAttribute('aria-disabled',String(v)));
+  MAIL.busy=true; dis(true); msg.className='mailmsg'; msg.textContent='שולח בקשה…'; msg.scrollIntoView({block:'nearest'});
   const r=SCAN.rows.find(x=>x.s===sym); const tf=st.tf==='d'?'יומי':'שבועי';
   try{
     await MAIL.mcp.callTool('Claude Code Remote','fire_trigger',{trigger_id:MAIL.trig,text:`TICKER: ${sym} (${r.n}). Requested from the SMZ scanner, ${tf} view, scan as of ${SCAN.asOf}.`},{cache:false});
@@ -515,9 +528,9 @@ async function mailSend(sym){
       :c==='server_not_connected'||c==='needs_reauth'?'החיבור Claude Code Remote לא זמין בדפדפן הזה.'
       :c==='not_in_manifest'||c==='blocked_by_policy'?'הדף לא קיבל הרשאה לשלוח את הבקשה.'
       :'השליחה נכשלה'+(e&&e.message?': '+String(e.message).slice(0,80):'')+'. אפשר לנסות שוב.';
-    btn.disabled=false;
+    MAIL.busy=false; dis(false); return;
   }
-  MAIL.busy=false; if(!btn.disabled) return; setTimeout(()=>{ btn.disabled=false; },15000);
+  setTimeout(()=>{ MAIL.busy=false; dis(false); },15000);
 }
 function header(){
   const u=SCAN.universe||{};
@@ -535,8 +548,12 @@ function start(data){
   $('#chips').addEventListener('click',e=>{ const b=e.target.closest('.chip'); if(!b) return; const g=b.dataset.g; st.grades=st.grades.includes(g)?st.grades.filter(x=>x!==g):st.grades.concat(g); LS.set('smzscan.g',st.grades); render(); });
   document.addEventListener('click',e=>{ const t=e.target.closest('[data-tf]'); if(t){ st.tf=t.dataset.tf; LS.set('smzscan.tf',st.tf); render(); return; }
     const i=e.target.closest('[data-ix]'); if(i){ st.ix=i.dataset.ix; LS.set('smzscan.ix',st.ix); render(); return; }
-    const mb=e.target.closest('.mailbtn'); if(mb){ mailSend(mb.dataset.mail); return; }
+    const mb=e.target.closest('.mailbtn'); if(mb){ if(mb.getAttribute('aria-disabled')!=='true') mailSend(mb.dataset.mail); return; }
+    if(e.target.closest('a.maillink')) return;
     const r=e.target.closest('.row'); if(r){ st.open=st.open===r.dataset.s?null:r.dataset.s; render(); } });
+  document.addEventListener('keydown',e=>{ if(e.key!=='Enter'&&e.key!==' ') return; const t=e.target; if(t.classList&&t.classList.contains('row')){ e.preventDefault(); t.click(); } else if(t.classList&&t.classList.contains('mailbtn')){ e.preventDefault(); t.click(); } });
+  // opened from the website with #TICKER: show that stock
+  const h=decodeURIComponent(location.hash.slice(1)).toUpperCase(); if(h&&SCAN.rows.some(r=>r.s===h)){ st.q=h; $('#q').value=h; st.open=h; render(); setTimeout(()=>{ const el=document.querySelector(`.row[data-s="${h}"]`); if(el) el.scrollIntoView({block:'start'}); },50); }
   mailInit();
   $('#q').addEventListener('input',e=>{ st.q=e.target.value; render(); });
   $('#sort').addEventListener('change',e=>{ st.sort=e.target.value; render(); });
