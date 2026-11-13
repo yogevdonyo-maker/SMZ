@@ -297,6 +297,14 @@ function visible(){
     return true;
   });
 }
+/* why a search found nothing: not scanned at all, or scanned but without a valid rising range in this time frame */
+function searchMiss(){
+  const q=st.q.trim().toUpperCase(), r=SCAN.rows.find(r=>r.s===q), other=st.tf==='d'?'w':'d', tfName={d:'ביומי',w:'בשבועי'};
+  if(!r) return `<b class="num">${esc(q)}</b> לא נמצאה בסריקה. הסריקה כוללת ${SCAN.universe&&SCAN.universe.us?'את כל המניות הנסחרות בארה"ב מעל רף שווי השוק':'את מדדי S&amp;P 500 ונאסד"ק 100'}, ואפשר להוסיף סימול לרשימת המעקב (extra-tickers.txt) כדי שייסרק מחר.`;
+  if(r.short) return `<b class="num">${esc(r.s)}</b> נסרקה, אבל אין לה עדיין היסטוריית מסחר מספקת (נדרשים כ-120 ימי מסחר).`;
+  if(st.ix!=='all'&&!r.i.includes(st.ix)) return `<b class="num">${esc(r.s)}</b> אינה חלק מהמדד שנבחר. אפשר לבחור "הכול" למעלה.`;
+  return `<b class="num">${esc(r.s)}</b> (${esc(r.n)}) נסרקה, אבל ${tfName[st.tf]} אין לה כרגע טווח עולה תקף – המחיר סגר פעמיים מתחת לשפל האחרון או שלא נוצר שיא ששבר את הקודם.${r[other]?` ${tfName[other]} יש לה טווח (דירוג <span class="num">${esc(r[other].g)}</span>) – אפשר לעבור למסגרת הזמן הזו למעלה.`:''} סגירה אחרונה <span class="num">${fmt(r.p)}</span>.`;
+}
 function render(){
   if(!SCAN) return;
   for(const b of document.querySelectorAll('[data-tf]')) b.setAttribute('aria-pressed',String(b.dataset.tf===st.tf));
@@ -308,7 +316,7 @@ function render(){
   const key={sc:r=>-r[st.tf].sc,rr:r=>-(r[st.tf].rr||0),pos:r=>-r[st.tf].pos,s:r=>0}[st.sort];
   rows.sort((x,y)=>key(x)-key(y)||(x.s<y.s?-1:1));
   $('#count').textContent=rows.length?`${rows.length} מניות`:'';
-  if(!rows.length){ SHOWN=[]; $('#rows').innerHTML=`<div class="empty">${searching?'לא נמצאה מניה כזו בסריקה.':'אין מניות במצב שנבחר. אפשר לסמן מצבים נוספים למעלה.'}</div>`; return; }
+  if(!rows.length){ SHOWN=[]; $('#rows').innerHTML=`<div class="empty">${searching?searchMiss():'אין מניות במצב שנבחר. אפשר לסמן מצבים נוספים למעלה.'}</div>`; return; }
   SHOWN=rows;
   $('#rows').innerHTML=rows.map(rowHTML).join('');
   if(st.open){ const el=document.getElementById('d-'+st.open); if(el) drawChart(el.querySelector('.chart'),SCAN.rows.find(r=>r.s===st.open)); }
@@ -381,9 +389,25 @@ function detailHTML(r){
     </div></div>`;
 }
 
+/* the price series behind the charts: inside the row (old scans / inline copies) or in data/series/<letter>.json, fetched on first use */
+const SERIES={};
+function seriesOf(r){
+  if(r.cd) return r;
+  const k=/^[A-Z]/.test(r.s)?r.s[0]:'_', sh=SERIES[k];
+  if(sh&&sh.rows) return sh.rows[r.s]||null;
+  if(!sh&&SCAN.series&&!INLINE){
+    SERIES[k]={loading:true};
+    fetch('data/'+SCAN.series+k+'.json',{cache:'no-store'}).then(x=>{ if(!x.ok) throw new Error(x.status); return x.json(); })
+      .then(rows=>{ SERIES[k]={rows}; if(st.open&&st.open[0]===k) render(); })
+      .catch(()=>{ SERIES[k]={rows:{},failed:true}; if(st.open&&st.open[0]===k) render(); });
+  }
+  return undefined;
+}
 /* price line with the zones. one y-scale, levels labelled at the right edge */
 function drawChart(box,r){
-  const a=r[st.tf], Z=lv(a), ser=st.tf==='d'?r.cd:r.cw, cal=(SCAN.cal||{})[st.tf]||[];
+  const a=r[st.tf], Z=lv(a), S=seriesOf(r), cal=(SCAN.cal||{})[st.tf]||[];
+  if(!S){ box.innerHTML=`<p class="muted" style="margin:0;direction:rtl">${S===undefined?'טוען את הגרף…':'הגרף אינו זמין'+(INLINE?' בעותק הזה – <a href="'+SITE+'#'+encodeURIComponent(r.s)+'" target="_blank" rel="noopener">לגרסה באתר</a>':'')}</p>`; return; }
+  const ser=st.tf==='d'?S.cd:S.cw;
   const stop=stopOf(a), W=Math.max(300,box.clientWidth), H=box.clientWidth<520?240:290, m={l:8,r:104,t:14,b:22};
   const c=cur(r), lp=c.q?c.p:null;
   const dates=cal.slice(-ser.length); const n=ser.length;
@@ -558,13 +582,14 @@ async function mailSend(sym){
 }
 function header(){
   const u=SCAN.universe||{};
-  $('#sub').innerHTML=`נכון לסגירת המסחר ב-${heDate(SCAN.asOf)} · <span class="num">${u.total||SCAN.rows.length}</span> מניות: S&amp;P 500, נאסד"ק 100 ורשימת מעקב`;
+  const cap=u.minCap?(u.minCap>=1e9?(u.minCap/1e9).toLocaleString('en-US',{maximumFractionDigits:1})+' מיליארד':Math.round(u.minCap/1e6)+' מיליון'):'';
+  $('#sub').innerHTML=`נכון לסגירת המסחר ב-${heDate(SCAN.asOf)} · <span class="num">${(u.total||SCAN.rows.length).toLocaleString('en-US')}</span> מניות: ${u.us?`כל המניות הנסחרות בארה"ב משווי שוק ${cap} דולר, `:''}S&amp;P 500, נאסד"ק 100 ורשימת מעקב`;
   const short=SCAN.rows.filter(r=>r.short).map(r=>r.s);
   const none=SCAN.rows.filter(r=>!r.short&&!r.d&&!r.w).length;
   $('#foot').innerHTML=`האיתותים מחושבים מכנית מכללי Smart Money Zones של פיטר דיקרלו ואינם ייעוץ השקעות. בחירת הטווח אוטומטית ועשויה להיות שונה מזו שדיקרלו מסמן ידנית, ולכן כדאי לאמת בגרף לפני פעולה. הסורק אינו בודק נתונים פונדמנטליים או מועדי דוחות. מקור המחירים: ${esc(SCAN.source||'Yahoo Finance')}, מחירי סגירה.`
     +(none?` ב-<span class="num">${none}</span> מניות אין כרגע טווח עולה תקף והן אינן מוצגות.`:'')
     +(short.length?` חסרה היסטוריה מספקת עבור <span class="num">${short.map(esc).join(', ')}</span>.`:'')
-    +((SCAN.failed||[]).length?` לא נטענו: <span class="num">${SCAN.failed.map(esc).join(', ')}</span>.`:'');
+    +((SCAN.failed||[]).length?` לא נטענו: <span class="num">${SCAN.failed.slice(0,12).map(f=>esc(String(f).replace(/\s*\(.*\)$/,''))).join(', ')}</span>${SCAN.failed.length>12?` ועוד ${SCAN.failed.length-12}`:''}.`:'');
 }
 function start(data){
   if(!data||data.v!==2){ $('#sub').textContent='הסריקה מתעדכנת לכללים החדשים. כדאי לרענן בעוד כמה דקות.'; setTimeout(()=>location.reload(),90000); return; }

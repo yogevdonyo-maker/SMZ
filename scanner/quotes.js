@@ -5,8 +5,10 @@
    node quotes.js --loop --dir out [--force]      stay running through the trading day and publish a fresh quotes.json
                                                   to the repo's `live` branch every minute (what the workflow runs)
 
-   The loop asks Yahoo for prices in batches of 20 (27 requests a minute for ~525 tickers) and refreshes the
-   day's high/low with a full per-ticker pass every 15 minutes. The `live` branch always holds a single commit.
+   The loop asks Yahoo for prices in batches of 20 and refreshes the day's high/low with a full per-ticker pass every
+   15 minutes. With the market-wide universe the tickers are split in two tiers: the index members, the watch list and
+   every stock in or near a zone (grades A–E) are refreshed every minute; the rest (far above their zones, or without
+   a valid range) every COLD_EVERY minutes. The `live` branch always holds a single commit.
    Needs Node 18+. In loop mode: GH_REMOTE (push URL with a token), GITHUB_REPOSITORY, GITHUB_TOKEN. */
 'use strict';
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
@@ -18,7 +20,10 @@ const now = () => Date.now() / 1000;
 const px = x => x == null || !isFinite(x) ? null : (Math.abs(x) < 5 ? Math.round(x * 10000) / 10000 : Math.round(x * 100) / 100);
 const ysym = s => s.replace('.', '-');
 const STEP = +process.env.SMZ_STEP || 60;   // seconds between publishes
-const FULL_EVERY = 15 * 60;           // seconds between full passes (day high/low)
+const FULL_EVERY = 15 * 60;           // seconds between full passes (day high/low) of the hot tier
+const COLD_EVERY = +process.env.SMZ_COLD_EVERY || 5;   // rounds between refreshes of the cold tier
+const HOT_GRADES = new Set(['A', 'B', 'C', 'D', 'E']);
+const isHot = r => (r.i || []).some(i => i === 'sp' || i === 'ndx' || i === 'x') || (r.d && HOT_GRADES.has(r.d.g)) || (r.w && HOT_GRADES.has(r.w.g));
 const MAX_RUN = 5 * 3600 + 40 * 60;   // a GitHub job may run 6 hours; hand over before that
 const FRESH = 150;                    // a published file younger than this means another run is feeding the branch
 
@@ -82,6 +87,7 @@ async function remoteQuotes() {
 async function main() {
   const scan = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'scan.json'), 'utf8'));
   const syms = scan.rows.map(r => r.s); const force = !!opt('force'); const loop = !!opt('loop');
+  const hot = scan.rows.filter(isHot).map(r => r.s), cold = scan.rows.filter(r => !isHot(r)).map(r => r.s);
   const probe = await chartMeta('SPY'); const reg = probe.currentTradingPeriod && probe.currentTradingPeriod.regular;
   if (!reg) throw new Error('no trading hours from Yahoo');
   const isOpen = () => now() >= reg.start && now() < reg.end;
@@ -116,9 +122,12 @@ async function main() {
 
   for (;;) {
     const t0 = now();
-    let ok;
-    if (t0 - lastFull >= FULL_EVERY) { ok = await fullPass(syms, Q); lastFull = t0; } else ok = await quickPass(syms, Q);
-    if (ok >= syms.length * 0.8) {
+    // every round: the hot tier (full pass for the day's range every FULL_EVERY, otherwise quick); every COLD_EVERY rounds: the cold tier too (quick)
+    const withCold = cold.length && n % COLD_EVERY === 0;
+    let ok, asked = hot.length + (withCold ? cold.length : 0);
+    if (t0 - lastFull >= FULL_EVERY) { ok = await fullPass(hot, Q); lastFull = t0; } else ok = await quickPass(hot, Q);
+    if (withCold) ok += await quickPass(cold, Q);
+    if (ok >= asked * 0.8) {
       fs.writeFileSync(path.join(dir, 'quotes.json'), payload({ loopStart }));
       git(dir, ['add', 'quotes.json']); git(dir, prevSha ? ['commit', '-q', '--amend', '-m', 'quotes'] : ['commit', '-q', '-m', 'quotes']);
       const sha = git(dir, ['rev-parse', 'HEAD']).trim();
@@ -131,9 +140,9 @@ async function main() {
         if (r && r.loopStart && r.loopStart !== loopStart && now() - r.t < FRESH) { console.log('another run took over – stopping'); break; }
         console.log('push failed, retrying on the next round'); prevSha = null;
       }
-    } else console.log(`round ${n}: only ${ok}/${syms.length} prices, skipped`);
+    } else console.log(`round ${n}: only ${ok}/${asked} prices, skipped`);
     n++;
-    if (n === 1 || n % 30 === 0) console.log(`round ${n} · ${ok}/${syms.length} prices · ${pushed} published · market ${isOpen() ? 'open' : 'closed'}`);
+    if (n === 1 || n % 30 === 0) console.log(`round ${n} · ${ok}/${asked} prices (${hot.length} hot, ${cold.length} cold) · ${pushed} published · market ${isOpen() ? 'open' : 'closed'}`);
     if (!inWindow && n >= 2) break;                                  // forced run outside market hours: a couple of rounds
     if (inWindow && now() >= reg.end + 5 * 60) break;                // closing prices are in
     if (now() - T0 > MAX_RUN) { console.log('time limit – the next scheduled run takes over'); break; }
