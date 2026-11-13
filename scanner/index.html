@@ -395,7 +395,8 @@ function seriesOf(r){
   if(r.cd) return r;
   const k=/^[A-Z]/.test(r.s)?r.s[0]:'_', sh=SERIES[k];
   if(sh&&sh.rows) return sh.rows[r.s]||null;
-  if(!sh&&SCAN.series&&!INLINE){
+  if(INLINE) return null;   // the inline copy carries the series only for rows in the buy zone
+  if(!sh&&SCAN.series){
     SERIES[k]={loading:true};
     fetch('data/'+SCAN.series+k+'.json',{cache:'no-store'}).then(x=>{ if(!x.ok) throw new Error(x.status); return x.json(); })
       .then(rows=>{ SERIES[k]={rows}; if(st.open&&st.open[0]===k) render(); })
