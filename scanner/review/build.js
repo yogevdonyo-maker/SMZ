@@ -21,7 +21,8 @@ const row = S && S.rows.find(r => r.s === T);
 
 /* ---------- helpers ---------- */
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const num = s => String(s).replace(/(\$?[−-]?\d[\d,]*(?:\.\d+)?%?(?:[–-]\$?\d[\d,]*(?:\.\d+)?%?)?[MBK]?)/g, '<span class="num">$1</span>');
+// numbers (with an optional sign only after a space or at the start, so a Hebrew hyphen before a number is not read as minus)
+const num = s => String(s).replace(/((?<![\p{L}\d])(?:[−-](?=\d))?\$?\d[\d,]*(?:\.\d+)?%?(?:[–-]\$?\d[\d,]*(?:\.\d+)?%?)?[MBK]?)/gu, '<span class="num">$1</span>');
 const md = s => num(esc(s)).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
 const fmt = n => n == null || !isFinite(n) ? '–' : (Math.abs(n) >= 1000 ? n.toFixed(0) : Math.abs(n) >= 5 ? n.toFixed(2) : n.toFixed(3)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 const pct = (n, dp = 0) => (n >= 0 ? '+' : '−') + Math.abs(n).toFixed(dp) + '%';
