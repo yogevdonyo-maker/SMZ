@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /* Builds a stock review in the layout of Peter DiCarlo's articles: HTML page + PDF.
 
-   node scanner/review/build.js content.json [--scan path/scan.json] [--out dir]
+   node scanner/review/build.js content.json [--scan path/scan.json] [--quotes quotes.json] [--out dir]
+   --quotes: the live-price file the dashboard uses (branch `live`); when its price is newer than the scan's close,
+   the review shows the current price, its place in the zones and the reward/risk from it.
 
    content.json holds the written parts (see example.json). The technical part – ranges, zones, entry, stops,
    targets, the math and the level map – is computed here from scan.json, so the numbers always match the scanner.
@@ -45,25 +47,37 @@ function tf(a) {
 }
 const D = row && tf(row.d), W = row && tf(row.w);
 const price = row ? row.p : null, asOf = S ? S.asOf : (C.asOf || '');
+// live price, when newer than the scan's close
+const nyDay = t => new Date(t * 1000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+let live = null;
+try {
+  const qf = opt('quotes', null); const Q = qf && fs.existsSync(qf) ? JSON.parse(fs.readFileSync(qf, 'utf8')) : null; const q = Q && Q.q && Q.q[T];
+  if (q && q[0] != null && q[1] && nyDay(q[1]) > asOf) live = { p: q[0], t: q[1], lo: q[2], hi: q[3], open: !!Q.open, chg: price ? (q[0] / price - 1) * 100 : null };
+} catch (e) { }
+const liveClock = t => new Date(t * 1000).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' });
+const liveDate = t => { const d = new Date(t * 1000); return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', timeZone: 'Asia/Jerusalem' }); };
+const region = (t, p) => p < t.a.lo ? 'מתחת לשפל הטווח' : p < t.bot ? 'בדיסקאונט עמוק, מתחת ל-SMZ' : p <= t.top ? 'בתוך ה-Smart Money Zone' : p <= t.inst ? 'באזור המוסדי' : 'מעל האזורים';
 
 function levelMap() {
   if (!D && !W) return '';
   const cols = [D && { lab: `יומי · טווח ${fmt(D.a.lo)} → ${fmt(D.a.hi)}`, t: D }, W && { lab: `שבועי · טווח ${fmt(W.a.lo)} → ${fmt(W.a.hi)}`, t: W }].filter(Boolean);   // weekly on the right, as the page reads
-  const vals = []; for (const c of cols) vals.push(c.t.a.hi, c.t.a.ss, c.t.inst, c.t.bot, price); if (row.vp && row.vp.poc) vals.push(row.vp.poc);
+  const vals = []; for (const c of cols) vals.push(c.t.a.hi, c.t.a.ss, c.t.inst, c.t.bot, price); if (row.vp && row.vp.poc) vals.push(row.vp.poc); if (live) vals.push(live.p);
   let lo = Math.min(...vals), hi = Math.max(...vals); const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
   const H = 230, top = 30, bot = 212, y = v => (top + (hi - v) / (hi - lo) * (bot - top));
   const colW = cols.length === 2 ? 300 : 620, gap = 20, W_ = 640;
   let svg = `<svg viewBox="0 0 ${W_} ${H}" role="img" aria-label="מפת הרמות" style="direction:ltr" direction="ltr"><rect width="${W_}" height="${H}" fill="var(--bg)"/>`;
   cols.forEach((c, i) => {
     const x0 = 10 + i * (colW + gap), t = c.t, x1 = x0 + colW;
-    const labs = [{ v: t.a.hi, s: 'יעד 1', c: 'var(--up)' }, { v: t.inst, s: 'אזור מוסדי', c: 'var(--blue)' }, { v: t.top, s: 'SMZ', c: 'var(--smz)' }, { v: t.bot, s: '', c: 'var(--smz)' }, { v: t.a.ss, s: 'סטופ מבני', c: 'var(--down)' }, { v: price, s: 'סגירה', c: 'var(--fg)', b: 1 }];
+    const labs = [{ v: t.a.hi, s: 'יעד 1', c: 'var(--up)' }, { v: t.inst, s: 'אזור מוסדי', c: 'var(--blue)' }, { v: t.top, s: 'SMZ', c: 'var(--smz)' }, { v: t.bot, s: '', c: 'var(--smz)' }, { v: t.a.ss, s: 'סטופ מבני', c: 'var(--down)' }, { v: price, s: live ? 'סגירה' : 'סגירה', c: 'var(--fg)', b: !live }];
+    if (live) labs.push({ v: live.p, s: 'עכשיו', c: 'var(--up)', b: 1 });
     if (c.t === (W || D) && row.vp && row.vp.poc) labs.push({ v: row.vp.poc, s: 'נקודת שליטה בנפח', c: 'var(--muted)', d: 1 });
     svg += `<text x="${x0 + 2}" y="18" font-size="12" font-weight="700" fill="var(--fg)" text-anchor="start" unicode-bidi="plaintext">${esc(c.lab)}</text>`;
     svg += `<rect x="${x0}" y="${y(t.inst).toFixed(1)}" width="${colW}" height="${Math.max(1, y(t.top) - y(t.inst)).toFixed(1)}" fill="var(--inst-bg)"/>`;
     svg += `<rect x="${x0}" y="${y(t.top).toFixed(1)}" width="${colW}" height="${Math.max(1.5, y(t.bot) - y(t.top)).toFixed(1)}" fill="var(--smz-bg)"/>`;
     svg += `<line x1="${x0}" x2="${x1}" y1="${y(t.a.hi).toFixed(1)}" y2="${y(t.a.hi).toFixed(1)}" stroke="var(--up)" stroke-dasharray="4 3"/>`;
     svg += `<line x1="${x0}" x2="${x1}" y1="${y(t.a.ss).toFixed(1)}" y2="${y(t.a.ss).toFixed(1)}" stroke="var(--down)" stroke-dasharray="4 3"/>`;
-    svg += `<line x1="${x0}" x2="${x1}" y1="${y(price).toFixed(1)}" y2="${y(price).toFixed(1)}" stroke="var(--fg)" stroke-width="2"/>`;
+    svg += `<line x1="${x0}" x2="${x1}" y1="${y(price).toFixed(1)}" y2="${y(price).toFixed(1)}" stroke="var(--fg)" stroke-width="${live ? 1 : 2}"/>`;
+    if (live) svg += `<line x1="${x0}" x2="${x1}" y1="${y(live.p).toFixed(1)}" y2="${y(live.p).toFixed(1)}" stroke="var(--up)" stroke-width="2"/>`;
     if (labs.some(l => l.d)) { const p = labs.find(l => l.d); svg += `<line x1="${x0}" x2="${x1}" y1="${y(p.v).toFixed(1)}" y2="${y(p.v).toFixed(1)}" stroke="var(--muted)" stroke-dasharray="1 4"/>`; }
     const L = labs.filter(l => l.s).map(l => Object.assign({}, l, { y: y(l.v) })).sort((p, q) => p.y - q.y);
     for (let k = 1; k < L.length; k++) if (L[k].y - L[k - 1].y < 13) L[k].y = L[k - 1].y + 13;
@@ -86,6 +100,7 @@ function techHTML() {
 <p><b>הטווח.</b> משפל של <span class="num">${fmt(a.lo)}</span> (${heDate(a.lt)}) לשיא של <span class="num">${fmt(a.hi)}</span> (${heDate(a.ht)}). הסגירה ב-<span class="num">${fmt(price)}</span> היא תיקון של <span class="num">${(a.pos * 100).toFixed(0)}%</span> מהשיא: ${STT[a.st]}. דירוג הסורק: <b>${GR[g]}</b>${why}.</p>
 <p><b>האזורים.</b> אזור מוסדי <span class="num">${fmt(t.top)}–${fmt(t.inst)}</span> · Smart Money Zone <span class="num">${fmt(t.bot)}–${fmt(t.top)}</span>${a.ol != null ? ` · טווח חיצוני מ-<span class="num">${fmt(a.ol)}</span>` : ''}.</p>
 <p><b>אישור.</b> ${conf || '–'}.</p>
+${live ? `<p><b>המחיר עכשיו.</b> <span class="num">${fmt(live.p)}</span> (${liveClock(live.t)}, <span class="num">${pct(live.chg, 1)}</span> מהסגירה): ${region(t, live.p)}.${live.p > a.ss ? ` מכאן, מול הסטופ המבני, היחס ליעד 1 הוא <span class="num">${((a.hi - live.p) / (live.p - a.ss)).toFixed(1)}</span> : 1.` : ' <b>מתחת לסטופ המבני</b>.'}</p>` : ''}
 <div class="math"><div class="mt">${what}</div><dl>
 <dt>כניסה</dt><dd><span class="num">${fmt(t.en)}</span> <small>${inZone ? 'הסגירה האחרונה' : 'לימיט באמצע ה-SMZ'}</small></dd>
 <dt>סטופ מבני</dt><dd><span class="num">${fmt(a.ss)}</span> <small>סגירה מתחת לשפל הטווח · סיכון <span class="num">${t.risk.toFixed(0)}%</span></small></dd>
@@ -142,8 +157,8 @@ figure{ margin:12px 0 16px; break-inside:avoid; } svg{ display:block; width:100%
 @media print{ .wrap{ max-width:none; padding:0; } body{ font-size:12.5px; } h1{ font-size:26px; } h2{ font-size:18px; } }
 @media (max-width:480px){ .bb{ grid-template-columns:1fr; } h1{ font-size:26px; } }
 </style></head><body><div class="wrap">
-<div class="eyebrow"><span>סקירה במתכונת Smart Money Zones</span><span>מחירים נכון לסגירת ${heDate(asOf)}</span></div>
-<h1><small>${esc(C.company || '')} (${esc(T)})${price != null ? ` · <span class="num">${fmt(price)}</span>` : ''}</small>${esc(C.title || '')}</h1>
+<div class="eyebrow"><span>סקירה במתכונת Smart Money Zones</span><span>${live ? `מחיר נוכחי <span class="num">${fmt(live.p)}</span> (${liveDate(live.t)} ${liveClock(live.t)}${live.open ? ', המסחר פתוח' : ', אחרי הסגירה'}) · רמות לפי סגירת ${heDate(asOf)}` : `מחירים נכון לסגירת ${heDate(asOf)}`}</span></div>
+<h1><small>${esc(C.company || '')} (${esc(T)})${live ? ` · <span class="num">${fmt(live.p)}</span> <span class="num">${pct(live.chg, 1)}</span>` : price != null ? ` · <span class="num">${fmt(price)}</span>` : ''}</small>${esc(C.title || '')}</h1>
 ${C.lede ? `<p class="lede">${md(C.lede)}</p>` : ''}
 <p class="disc">סקירה חינוכית שנכתבה במתכונת הניתוחים של פיטר דיקרלו, על בסיס הסורק ומקורות ציבוריים. אינה ייעוץ השקעות. יש לבדוק את הנתונים לפני כל פעולה.</p>
 <h2>הגרסה הקצרה</h2>${(C.short || []).map(p => `<p>${md(p)}</p>`).join('')}
@@ -173,5 +188,5 @@ fs.writeFileSync(base + '.artifact.html', body);
     await p.pdf({ path: base + '.pdf', format: 'A4', printBackground: true, preferCSSPageSize: true });
     await b.close(); pdf = true;
   } catch (e) { console.error('PDF not rendered:', e.message); }
-  console.log(JSON.stringify({ html: base + '.html', artifact: base + '.artifact.html', pdf: pdf ? base + '.pdf' : null, pdfName: `${T}-review.pdf`, ticker: T, asOf, price }));
+  console.log(JSON.stringify({ html: base + '.html', artifact: base + '.artifact.html', pdf: pdf ? base + '.pdf' : null, pdfName: `${T}-review.pdf`, ticker: T, asOf, price, live: live ? { price: live.p, time: new Date(live.t * 1000).toISOString(), changeFromClosePct: +live.chg.toFixed(2), marketOpen: live.open } : null }));
 })();
